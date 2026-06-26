@@ -25,7 +25,22 @@ from pathlib import Path
 EXCEL_PATH = "your_bias_data.xlsx"      # ← update this
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingBias.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
-SHEET_NAME = "MPF"                      # "MPF" or "Volume"
+
+DATA_TYPE    = "Volume"                    # "MPF" or "Volume"
+MEASURE_TYPE = "relative"               # "absolute" or "relative" — ignored if DATA_TYPE = "Volume"
+
+if DATA_TYPE == "Volume":
+    SHEET_NAME    = "Volume-Mean Relative Difference"
+    MEASURE_LABEL = "Mean Relative Difference (%)"
+    FILE_LABEL    = "volume_mean_relative_difference"
+elif MEASURE_TYPE == "absolute":
+    SHEET_NAME    = "MPF-Mean Absolute Difference"
+    MEASURE_LABEL = "Mean Absolute Difference (%)"
+    FILE_LABEL    = "mpf_mean_absolute_difference"
+else:
+    SHEET_NAME    = "MPF-Mean Relative Difference"
+    MEASURE_LABEL = "Mean Relative Difference (%)"
+    FILE_LABEL    = "mpf_mean_relative_difference"
 
 # ── Column name map ───────────────────────────────────────────────────────────
 
@@ -38,23 +53,28 @@ COL = {
     "bias_1"    : "Mean Bias MPFvMPFreg",
     "bias_lo_1" : "Lower CI MPFvMPFreg",
     "bias_hi_1" : "Upper CI MPFvMPFreg",
+    "pval_1"    : "Adj. P-value MPFvMPFreg",
 
     # ── MPF − MPRAGE ──────────────────────────────────────────────────────
     "bias_2"    : "Mean Bias MPFvMPRAGE",
     "bias_lo_2" : "Lower CI MPFvMPRAGE",
     "bias_hi_2" : "Upper CI MPFvMPRAGE",
+    "pval_2"    : "Adj. P-value MPFvMPRAGE",
 
     # ── MPFreg − MPRAGE ───────────────────────────────────────────────────
     "bias_3"    : "Mean Bias MPFregvMPRAGE",
     "bias_lo_3" : "Lower CI MPFregvMPRAGE",
     "bias_hi_3" : "Upper CI MPFregvMPRAGE",
+    "pval_3"    : "Adj. P-value MPFregvMPRAGE",
 }
 
 # ── Plotting options ───────────────────────────────────────────────────────────
 REFERENCE_LINE    = 0.0
+ALPHA_THRESHOLD   = 0.05            # p-value cutoff for significance
 GM_COLOR          = "#4C72B0"       # blue
 WM_COLOR          = "#E07B39"       # orange
-SUBCORTICAL_COLOR = "#7F7F7F"       # gray
+SUBCORTICAL_COLOR = "#1A1A1A"       # gray
+NS_COLOR          = "#AAAAAA"       # light gray — non-significant (all tissue types)
 MARKER_SIZE       = 6
 LINEWIDTH         = 1.4
 DODGE             = 0.22            # vertical separation between GM and WM markers
@@ -104,9 +124,9 @@ avg = (
 # 3. Comparisons dictionary
 # ─────────────────────────────────────────────────────────────────────────────
 COMPARISONS = {
-    "MPF − MPFreg"   : (COL["bias_1"], COL["bias_lo_1"], COL["bias_hi_1"]),
-    "MPF − MPRAGE"   : (COL["bias_2"], COL["bias_lo_2"], COL["bias_hi_2"]),
-    "MPFreg − MPRAGE": (COL["bias_3"], COL["bias_lo_3"], COL["bias_hi_3"]),
+    "MPF − MPFreg"   : (COL["bias_1"], COL["bias_lo_1"], COL["bias_hi_1"], COL["pval_1"]),
+    "MPF − MPRAGE"   : (COL["bias_2"], COL["bias_lo_2"], COL["bias_hi_2"], COL["pval_2"]),
+    "MPFreg − MPRAGE": (COL["bias_3"], COL["bias_lo_3"], COL["bias_hi_3"], COL["pval_3"]),
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -159,9 +179,10 @@ avg_sub = (
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Core draw function — GM & WM panel
 # ─────────────────────────────────────────────────────────────────────────────
-def draw_panel(ax, avg_df, bias_col, lo_col, hi_col, show_yticks=True):
+def draw_panel(ax, avg_df, bias_col, lo_col, hi_col, pval_col, show_yticks=True):
     """
     Draw GM and WM bias estimates with CIs onto ax.
+    Significant regions (p < ALPHA_THRESHOLD) are colored; others are gray.
     X-axis is auto-scaled to the data.
     """
     gm = avg_df[avg_df[COL["region"]] == "GM"]
@@ -174,8 +195,10 @@ def draw_panel(ax, avg_df, bias_col, lo_col, hi_col, show_yticks=True):
         bias = row[bias_col]
         lo   = row[lo_col]
         hi   = row[hi_col]
-        ax.plot([lo, hi], [y, y], color=GM_COLOR, lw=LINEWIDTH, zorder=2)
-        ax.plot(bias, y, "o", color=GM_COLOR, ms=MARKER_SIZE, zorder=3)
+        pval = row[pval_col]
+        color = GM_COLOR if pval < ALPHA_THRESHOLD else NS_COLOR
+        ax.plot([lo, hi], [y, y], color=color, lw=LINEWIDTH, zorder=2)
+        ax.plot(bias, y, "o", color=color, ms=MARKER_SIZE, zorder=3)
 
     # ── Plot WM ──
     for _, row in wm.iterrows():
@@ -184,8 +207,10 @@ def draw_panel(ax, avg_df, bias_col, lo_col, hi_col, show_yticks=True):
         bias = row[bias_col]
         lo   = row[lo_col]
         hi   = row[hi_col]
-        ax.plot([lo, hi], [y, y], color=WM_COLOR, lw=LINEWIDTH, zorder=2)
-        ax.plot(bias, y, "s", color=WM_COLOR, ms=MARKER_SIZE, zorder=3)
+        pval = row[pval_col]
+        color = WM_COLOR if pval < ALPHA_THRESHOLD else NS_COLOR
+        ax.plot([lo, hi], [y, y], color=color, lw=LINEWIDTH, zorder=2)
+        ax.plot(bias, y, "s", color=color, ms=MARKER_SIZE, zorder=3)
 
     # ── Reference line at 0 ──
     ax.axvline(REFERENCE_LINE, color="gray", linestyle="--", lw=1.2, zorder=1)
@@ -205,6 +230,7 @@ def draw_panel(ax, avg_df, bias_col, lo_col, hi_col, show_yticks=True):
     ax.set_ylim(-0.5, N_REGIONS - 0.5)
 
     # ── X-axis — auto-scaled ──
+    ax.set_xlim(X_LIM)
     ax.tick_params(axis="x", labelsize=FONT["xtick"])
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -213,9 +239,12 @@ def draw_panel(ax, avg_df, bias_col, lo_col, hi_col, show_yticks=True):
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Subcortical draw function
 # ─────────────────────────────────────────────────────────────────────────────
-def draw_subcortical_panel(ax, sub_df, bias_col, lo_col, hi_col,
+def draw_subcortical_panel(ax, sub_df, bias_col, lo_col, hi_col, pval_col,
                            sub_region_order, show_yticks=True):
-    """Draw subcortical bias estimates — single tissue type, gray markers."""
+    """
+    Draw subcortical bias estimates — single tissue type.
+    Significant regions colored, non-significant gray.
+    """
     n_sub     = len(sub_region_order)
     y_pos_sub = {r: i for i, r in enumerate(sub_region_order)}
 
@@ -227,8 +256,10 @@ def draw_subcortical_panel(ax, sub_df, bias_col, lo_col, hi_col,
         bias = row[bias_col]
         lo   = row[lo_col]
         hi   = row[hi_col]
-        ax.plot([lo, hi], [y, y], color=SUBCORTICAL_COLOR, lw=LINEWIDTH, zorder=2)
-        ax.plot(bias, y, "D", color=SUBCORTICAL_COLOR, ms=MARKER_SIZE, zorder=3)
+        pval = row[pval_col]
+        color = SUBCORTICAL_COLOR if pval < ALPHA_THRESHOLD else NS_COLOR
+        ax.plot([lo, hi], [y, y], color=color, lw=LINEWIDTH, zorder=2)
+        ax.plot(bias, y, "D", color=color, ms=MARKER_SIZE, zorder=3)
 
     ax.axvline(REFERENCE_LINE, color="gray", linestyle="--", lw=1.2, zorder=1)
 
@@ -243,6 +274,7 @@ def draw_subcortical_panel(ax, sub_df, bias_col, lo_col, hi_col,
         ax.set_yticklabels([])
 
     ax.set_ylim(-0.5, n_sub - 0.5)
+    ax.set_xlim(X_LIM)
     ax.tick_params(axis="x", labelsize=FONT["xtick"])
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -255,7 +287,15 @@ sub_bias_cols = [cols[0] for cols in COMPARISONS.values()]
 avg_sub_sorted = avg_sub.copy()
 avg_sub_sorted["_sort"] = avg_sub_sorted[sub_bias_cols].mean(axis=1)
 SUB_REGION_ORDER = avg_sub_sorted.sort_values("_sort", ascending=True)[COL["subregion"]].tolist()
-N_SUB_REGIONS    = len(SUB_REGION_ORDER)
+n_sub_regions    = len(SUB_REGION_ORDER)
+
+# ── Compute shared x limits across all comparisons and tissue types ──
+all_lo_cols  = [COL["bias_lo_1"], COL["bias_lo_2"], COL["bias_lo_3"]]
+all_hi_cols  = [COL["bias_hi_1"], COL["bias_hi_2"], COL["bias_hi_3"]]
+global_min   = min(avg[all_lo_cols].min().min(), avg_sub[all_lo_cols].min().min())
+global_max   = max(avg[all_hi_cols].max().max(), avg_sub[all_hi_cols].max().max())
+padding      = (global_max - global_min) * 0.05   # 5% padding on each side
+X_LIM        = (global_min - padding, global_max + padding)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -272,42 +312,43 @@ fig, axes = plt.subplots(
     sharey=False,
 )
 
-for idx, (comp_name, (bias_col, lo_col, hi_col)) in enumerate(comp_items):
+for idx, (comp_name, (bias_col, lo_col, hi_col, pval_col)) in enumerate(comp_items):
     ax          = axes[idx]
     show_yticks = (idx == 0)
 
-    draw_panel(ax, avg, bias_col, lo_col, hi_col, show_yticks=show_yticks)
+    draw_panel(ax, avg, bias_col, lo_col, hi_col, pval_col, show_yticks=show_yticks)
 
-    ax.set_xlabel("Bias", fontsize=FONT["xlabel"])
+    ax.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
     ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
 
     if show_yticks:
         ax.set_ylabel("DK Atlas Region", fontsize=FONT["ylabel"])
 
 # ── Shared legend ──
-gm_patch  = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
-wm_patch  = mpatches.Patch(color=WM_COLOR, label="White Matter")
+gm_patch  = mpatches.Patch(color=GM_COLOR, label=f"Gray Matter (p < {ALPHA_THRESHOLD})")
+wm_patch  = mpatches.Patch(color=WM_COLOR, label=f"White Matter (p < {ALPHA_THRESHOLD})")
+ns_patch  = mpatches.Patch(color=NS_COLOR,  label="Not significant")
 ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
-                       lw=1.2, label="Bias = 0")
+                       lw=1.2, label="Difference = 0")
 
 fig.legend(
-    handles=[gm_patch, wm_patch, ref_line],
+    handles=[gm_patch, wm_patch, ns_patch, ref_line],
     loc="upper right",
-    ncol=3,
+    ncol=4,
     fontsize=FONT["legend"],
     frameon=False,
-    bbox_to_anchor=(1.0, 0.99),
+    bbox_to_anchor=(1.0, 0.985),
 )
 
 fig.suptitle(
-    f"Bias — All Comparisons - {SHEET_NAME}\nDK Atlas, Hemispheres Averaged",
+    f"{MEASURE_LABEL} — All Comparisons - {SHEET_NAME}\nDK Atlas, Hemispheres Averaged",
     fontsize=FONT["title"] + 1,
     fontweight="bold",
     y=1.01,
 )
 
 plt.tight_layout()
-combined_out = OUTPUT_DIR / f"bias_forest_all_comparisons_{SHEET_NAME}.png"
+combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_all_comparisons_{SHEET_NAME}.png"
 fig.savefig(combined_out, dpi=150, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
@@ -316,7 +357,7 @@ print(f"Saved: {combined_out}")
 # ─────────────────────────────────────────────────────────────────────────────
 # 10. Subcortical combined figure — all three comparisons side by side
 # ─────────────────────────────────────────────────────────────────────────────
-fig_height_sub = max(6, N_SUB_REGIONS * 0.38)
+fig_height_sub = max(6, n_sub_regions * 0.38)
 
 fig_sub, axes_sub = plt.subplots(
     1, n_panels,
@@ -324,42 +365,43 @@ fig_sub, axes_sub = plt.subplots(
     sharey=False,
 )
 
-for idx, (comp_name, (bias_col, lo_col, hi_col)) in enumerate(comp_items):
+for idx, (comp_name, (bias_col, lo_col, hi_col, pval_col)) in enumerate(comp_items):
     ax          = axes_sub[idx]
     show_yticks = (idx == 0)
 
-    draw_subcortical_panel(ax, avg_sub, bias_col, lo_col, hi_col,
+    draw_subcortical_panel(ax, avg_sub, bias_col, lo_col, hi_col, pval_col,
                            SUB_REGION_ORDER, show_yticks=show_yticks)
 
-    ax.set_xlabel("Bias", fontsize=FONT["xlabel"])
+    ax.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
     ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
 
     if show_yticks:
         ax.set_ylabel("Subcortical Region", fontsize=FONT["ylabel"])
 
 # ── Shared legend ──
-sub_patch    = mpatches.Patch(color=SUBCORTICAL_COLOR, label="Subcortical")
+sub_patch    = mpatches.Patch(color=SUBCORTICAL_COLOR, label=f"Subcortical(p < {ALPHA_THRESHOLD})")
+ns_patch_sub  = mpatches.Patch(color=NS_COLOR, label="Not significant")
 ref_line_sub = plt.Line2D([0], [0], color="gray", linestyle="--",
-                          lw=1.2, label="Bias = 0")
+                          lw=1.2, label="Difference = 0")
 
 fig_sub.legend(
-    handles=[sub_patch, ref_line_sub],
+    handles=[sub_patch, ns_patch_sub, ref_line_sub],
     loc="upper right",
-    ncol=2,
+    ncol=3,
     fontsize=FONT["legend"],
     frameon=False,
-    bbox_to_anchor=(1.0, 0.99),
+    bbox_to_anchor=(1.0, 0.96),
 )
 
 fig_sub.suptitle(
-    f"Bias — All Comparisons - {SHEET_NAME}\nSubcortical Regions, Hemispheres Averaged",
+    f"{MEASURE_LABEL} — All Comparisons - {SHEET_NAME}\nSubcortical Regions, Hemispheres Averaged",
     fontsize=FONT["title"] + 1,
     fontweight="bold",
     y=1.01,
 )
 
 plt.tight_layout()
-subcortical_out = OUTPUT_DIR / f"bias_forest_subcortical_{SHEET_NAME}.png"
+subcortical_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_subcortical_{SHEET_NAME}.png"
 fig_sub.savefig(subcortical_out, dpi=150, bbox_inches="tight")
 plt.close(fig_sub)
 print(f"Saved: {subcortical_out}")
