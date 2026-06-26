@@ -28,6 +28,7 @@ from pathlib import Path
 # ── File path ─────────────────────────────────────────────────────────────────
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingICC.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
+SHEET_NAME = "Volume" # "Volume" or "MPF"
 
 # ── Column name map ───────────────────────────────────────────────────────────
 # Update the VALUES (right side) to match your exact Excel headers.
@@ -66,8 +67,9 @@ COL = {
 # ── Plotting options ───────────────────────────────────────────────────────────
 ICC_TYPE        = "consistency"   # "consistency" or "absolute"
 REFERENCE_LINE  = 0.75
-GM_COLOR        = "#E07B39"       # orange
-WM_COLOR        = "#4C72B0"       # blue
+WM_COLOR        = "#E07B39"       # orange
+GM_COLOR        = "#4C72B0"       # blue
+SUBCORTICAL_COLOR = "#7F7F7F"     # gray
 MARKER_SIZE     = 6
 LINEWIDTH       = 1.4
 DODGE           = 0.22            # vertical separation between GM and WM markers
@@ -75,24 +77,23 @@ DODGE           = 0.22            # vertical separation between GM and WM marker
 # ── Font sizes — adjust all in one place ──────────────────────────────────────
 FONT = {
     "title"  : 15,
-    "xlabel" : 13,
-    "ylabel" : 13,
-    "xtick"  : 11,
-    "ytick"  : 10,
-    "legend" : 10,
+    "xlabel" : 17,
+    "ylabel" : 17,
+    "xtick"  : 17,
+    "ytick"  : 17,
+    "legend" : 17,
 }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Load & prepare data
 # ─────────────────────────────────────────────────────────────────────────────
-df = pd.read_excel(EXCEL_PATH)
+df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
 
 # Filter to GM and WM only (exclude Subcortical for DK atlas plot)
 df = df[df[COL["region"]].isin(["GM", "WM"])].copy()
 
 # Exclude whole-brain "cerebrum" rows
-# Comment out the next line if you WANT to include them
 # df = df[~df[COL["subregion"]].str.lower().str.contains("cerebrum", na=False)]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,6 +102,15 @@ df = df[df[COL["region"]].isin(["GM", "WM"])].copy()
 icc_cols = [v for k, v in COL.items() if k not in ("region", "subregion", "side")]
 avg = (
     df.groupby([COL["subregion"], COL["region"]])[icc_cols]
+    .mean()
+    .reset_index()
+)
+
+# ── Subcortical data (kept separate, averaged across hemispheres) ──
+df_sub = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
+df_sub = df_sub[df_sub[COL["region"]] == "Subcortical"].copy()
+avg_sub = (
+    df_sub.groupby([COL["subregion"], COL["region"]])[icc_cols]
     .mean()
     .reset_index()
 )
@@ -202,7 +212,43 @@ def draw_panel(ax, avg_df, icc_col, lo_col, hi_col,
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
+def draw_subcortical_panel(ax, sub_df, icc_col, lo_col, hi_col,
+                           show_yticks=True):
+    """Draw subcortical ICC estimates — single tissue type, gray markers."""
+    # Sort regions by average ICC across comparisons
+    sub_icc_cols = [cols[0] for cols in COMPARISONS.values()]
+    sub_sorted = sub_df.copy()
+    sub_sorted["_mean_icc"] = sub_sorted[sub_icc_cols].mean(axis=1)
+    sub_region_order = sub_sorted.sort_values("_mean_icc", ascending=True)[COL["subregion"]].tolist()
+    n_sub = len(sub_region_order)
+    y_pos_sub = {r: i for i, r in enumerate(sub_region_order)}
 
+    for _, row in sub_df.iterrows():
+        r   = row[COL["subregion"]]
+        y   = y_pos_sub[r]
+        icc = row[icc_col]
+        lo  = row[lo_col]
+        hi  = row[hi_col]
+        ax.plot([lo, hi], [y, y], color=SUBCORTICAL_COLOR, lw=LINEWIDTH, zorder=2)
+        ax.plot(icc, y, "D", color=SUBCORTICAL_COLOR, ms=MARKER_SIZE, zorder=3)
+
+    ax.axvline(REFERENCE_LINE, color="gray", linestyle="--", lw=1.2, zorder=1)
+
+    for i in range(n_sub):
+        if i % 2 == 0:
+            ax.axhspan(i - 0.5, i + 0.5, color="whitesmoke", zorder=0)
+
+    ax.set_yticks(range(n_sub))
+    if show_yticks:
+        ax.set_yticklabels(sub_region_order, fontsize=FONT["ytick"])
+    else:
+        ax.set_yticklabels([])
+
+    ax.set_ylim(-0.5, n_sub - 0.5)
+    ax.set_xlim(-0.05, 1.05)
+    ax.tick_params(axis="x", labelsize=FONT["xtick"])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Individual plots (one per comparison)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -271,24 +317,76 @@ gm_patch = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
 wm_patch = mpatches.Patch(color=WM_COLOR, label="White Matter")
 ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
                        lw=1.2, label=f"ICC = {REFERENCE_LINE}")
+
 fig.legend(
     handles=[gm_patch, wm_patch, ref_line],
-    loc="lower center",
+    loc="upper right",
     ncol=3,
     fontsize=FONT["legend"],
-    framealpha=0.9,
-    bbox_to_anchor=(0.5, -0.02),
+    frameon=False,
+    bbox_to_anchor=(1.0, 0.99),
 )
 
 fig.suptitle(
-    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons\nDK Atlas, Hemispheres Averaged",
+    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons - {SHEET_NAME}\nDK Atlas, Hemispheres Averaged",
     fontsize=FONT["title"] + 1,
     fontweight="bold",
     y=1.01,
 )
 
 plt.tight_layout()
-combined_out = OUTPUT_DIR / f"icc_forest_all_comparisons_{ICC_TYPE}.png"
+combined_out = OUTPUT_DIR / f"icc_forest_all_comparisons_{ICC_TYPE}_{SHEET_NAME}.png"
 fig.savefig(combined_out, dpi=150, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Subcortical combined figure — all three comparisons side by side
+# ─────────────────────────────────────────────────────────────────────────────
+n_sub_regions = avg_sub[COL["subregion"]].nunique()
+fig_height_sub = max(6, n_sub_regions * 0.38)
+
+fig_sub, axes_sub = plt.subplots(
+    1, n_panels,
+    figsize=(fig_width, fig_height_sub),
+    sharey=False,
+)
+
+for idx, (comp_name, (icc_col, lo_col, hi_col)) in enumerate(comp_items):
+    ax          = axes_sub[idx]
+    show_yticks = (idx == 0)
+
+    draw_subcortical_panel(ax, avg_sub, icc_col, lo_col, hi_col,
+                           show_yticks=show_yticks)
+
+    ax.set_xlabel(f"ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
+    ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
+
+    if show_yticks:
+        ax.set_ylabel("Subcortical Region", fontsize=FONT["ylabel"])
+
+# Legend
+sub_patch = mpatches.Patch(color=SUBCORTICAL_COLOR, label="Subcortical")
+ref_line_sub = plt.Line2D([0], [0], color="gray", linestyle="--",
+                          lw=1.2, label=f"ICC = {REFERENCE_LINE}")
+fig_sub.legend(
+    handles=[sub_patch, ref_line_sub],
+    loc="upper right",
+    ncol=2,
+    fontsize=FONT["legend"],
+    frameon=False,
+    bbox_to_anchor=(1.0, 0.99),
+)
+
+fig_sub.suptitle(
+    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons - {SHEET_NAME}\nSubcortical Regions, Hemispheres Averaged",
+    fontsize=FONT["title"] + 1,
+    fontweight="bold",
+    y=1.01,
+)
+
+plt.tight_layout()
+subcortical_out = OUTPUT_DIR / f"icc_forest_subcortical_{ICC_TYPE}_{SHEET_NAME}.png"
+fig_sub.savefig(subcortical_out, dpi=150, bbox_inches="tight")
+plt.close(fig_sub)
+print(f"Saved: {subcortical_out}")
