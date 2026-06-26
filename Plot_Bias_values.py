@@ -124,9 +124,9 @@ avg = (
 # 3. Comparisons dictionary
 # ─────────────────────────────────────────────────────────────────────────────
 COMPARISONS = {
-    "MPF − MPFreg"   : (COL["bias_1"], COL["bias_lo_1"], COL["bias_hi_1"], COL["pval_1"]),
-    "MPF − MPRAGE"   : (COL["bias_2"], COL["bias_lo_2"], COL["bias_hi_2"], COL["pval_2"]),
-    "MPFreg − MPRAGE": (COL["bias_3"], COL["bias_lo_3"], COL["bias_hi_3"], COL["pval_3"]),
+    "MPFreg − MPF"   : (COL["bias_1"], COL["bias_lo_1"], COL["bias_hi_1"], COL["pval_1"]),
+    "MPRAGE − MPF"   : (COL["bias_2"], COL["bias_lo_2"], COL["bias_hi_2"], COL["pval_2"]),
+    "MPRAGE − MPFreg": (COL["bias_3"], COL["bias_lo_3"], COL["bias_hi_3"], COL["pval_3"]),
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
