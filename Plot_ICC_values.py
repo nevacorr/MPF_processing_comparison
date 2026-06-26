@@ -16,7 +16,6 @@ Inputs:
             ICC_A_lower_<comparison>: lower CI (absolute)
             ICC_A_upper_<comparison>: upper CI (absolute)
 
-    ── Update the COLUMN NAME MAP below to match your actual headers ──
 """
 
 import pandas as pd
@@ -31,8 +30,6 @@ OUTPUT_DIR = Path(".")
 SHEET_NAME = "Volume" # "Volume" or "MPF"
 
 # ── Column name map ───────────────────────────────────────────────────────────
-# Update the VALUES (right side) to match your exact Excel headers.
-# Keys are used internally — do not change them.
 
 COL = {
     "region"    : "Region",
