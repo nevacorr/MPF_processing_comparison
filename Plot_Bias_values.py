@@ -26,7 +26,7 @@ EXCEL_PATH = "your_bias_data.xlsx"      # ← update this
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingBias.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
 
-DATA_TYPE    = "Volume"                    # "MPF" or "Volume"
+DATA_TYPE    = "MPF"                    # "MPF" or "Volume"
 MEASURE_TYPE = "relative"               # "absolute" or "relative" — ignored if DATA_TYPE = "Volume"
 
 if DATA_TYPE == "Volume":
@@ -110,9 +110,11 @@ df_raw[COL["subregion"]] = df_raw[COL["subregion"]].str.replace(
 df = df_raw[df_raw[COL["region"]].isin(["GM", "WM"])].copy()
 
 bias_cols = [v for k, v in COL.items() if k not in ("region", "subregion", "side")]
+scale_cols = [v for k, v in COL.items() if k.startswith("bias_") or k.startswith("bias_lo_") or k.startswith("bias_hi_")]
 
+df[scale_cols] = df[scale_cols] * 100
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Average Left and Right hemispheres for each Subregion × Region
+# 2. Average Left and Right hemispheres for each Subregion × Region and convert to percent by multiplying by 100
 # ─────────────────────────────────────────────────────────────────────────────
 avg = (
     df.groupby([COL["subregion"], COL["region"]])[bias_cols]
@@ -169,12 +171,32 @@ Y_POS     = {r: i for i, r in enumerate(REGION_ORDER)}
 # 5. Subcortical data — averaged across hemispheres
 # ─────────────────────────────────────────────────────────────────────────────
 df_sub = df_raw[df_raw[COL["region"]] == "Subcortical"].copy()
+df_sub[scale_cols] = df_sub[scale_cols] * 100
+
 avg_sub = (
     df_sub.groupby([COL["subregion"], COL["region"]])[bias_cols]
     .mean()
     .reset_index()
 )
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 5b. Summary statistics — hemisphere-averaged significant bias values
+# ─────────────────────────────────────────────────────────────────────────────
+def compute_bias_stats(df_in, region_label, bias_col, pval_col):
+    sig = df_in[df_in[pval_col] < ALPHA_THRESHOLD]
+    pos = sig[sig[bias_col] > 0][bias_col]
+    neg = sig[sig[bias_col] < 0][bias_col]
+    return {
+        "Region"   : region_label,
+        "Pos_N"    : len(pos),
+        "Pos_Mean" : round(pos.mean(), 4) if len(pos) > 0 else np.nan,
+        "Pos_Min"  : round(pos.min(),  4) if len(pos) > 0 else np.nan,
+        "Pos_Max"  : round(pos.max(),  4) if len(pos) > 0 else np.nan,
+        "Neg_N"    : len(neg),
+        "Neg_Mean" : round(neg.mean(), 4) if len(neg) > 0 else np.nan,
+        "Neg_Min"  : round(neg.min(),  4) if len(neg) > 0 else np.nan,
+        "Neg_Max"  : round(neg.max(),  4) if len(neg) > 0 else np.nan,
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Core draw function — GM & WM panel
@@ -322,7 +344,7 @@ for idx, (comp_name, (bias_col, lo_col, hi_col, pval_col)) in enumerate(comp_ite
     ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
 
     if show_yticks:
-        ax.set_ylabel("DK Atlas Region", fontsize=FONT["ylabel"])
+        ax.set_ylabel("Region", fontsize=FONT["ylabel"])
 
 # ── Shared legend ──
 gm_patch  = mpatches.Patch(color=GM_COLOR, label=f"Gray Matter (p < {ALPHA_THRESHOLD})")
@@ -405,3 +427,40 @@ subcortical_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_subcortical_{SHEET_NAME}.pn
 fig_sub.savefig(subcortical_out, dpi=150, bbox_inches="tight")
 plt.close(fig_sub)
 print(f"Saved: {subcortical_out}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Print and save summary statistics
+# ─────────────────────────────────────────────────────────────────────────────
+summary_rows = []
+
+for comp_name, (bias_col, lo_col, hi_col, pval_col) in COMPARISONS.items():
+
+    # GM
+    gm_data = avg[avg[COL["region"]] == "GM"]
+    row = compute_bias_stats(gm_data, f"{comp_name} — GM", bias_col, pval_col)
+    row["Comparison"] = comp_name
+    summary_rows.append(row)
+
+    # WM
+    wm_data = avg[avg[COL["region"]] == "WM"]
+    row = compute_bias_stats(wm_data, f"{comp_name} — WM", bias_col, pval_col)
+    row["Comparison"] = comp_name
+    summary_rows.append(row)
+
+    # Subcortical
+    row = compute_bias_stats(avg_sub, f"{comp_name} — Subcortical", bias_col, pval_col)
+    row["Comparison"] = comp_name
+    summary_rows.append(row)
+
+summary_df = pd.DataFrame(summary_rows)[[
+    "Comparison", "Region",
+    "Pos_N", "Pos_Mean", "Pos_Min", "Pos_Max",
+    "Neg_N", "Neg_Mean", "Neg_Min", "Neg_Max",
+]]
+
+print("\n── Bias Summary Statistics ──")
+print(summary_df.to_string(index=False))
+
+stats_out = OUTPUT_DIR / f"{FILE_LABEL}_bias_summary_stats_{SHEET_NAME}.csv"
+summary_df.to_csv(stats_out, index=False)
+print(f"\nSaved: {stats_out}")

@@ -27,7 +27,7 @@ from pathlib import Path
 # ── File path ─────────────────────────────────────────────────────────────────
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingICC.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
-SHEET_NAME = "Volume" # "Volume" or "MPF"
+SHEET_NAME = "MPF" # "Volume" or "MPF"
 
 # ── Column name map ───────────────────────────────────────────────────────────
 
@@ -111,6 +111,18 @@ avg_sub = (
     .mean()
     .reset_index()
 )
+# ─────────────────────────────────────────────────────────────────────────────
+# 2b. Summary statistics — ICC mean and range per tissue type
+# ─────────────────────────────────────────────────────────────────────────────
+def compute_icc_stats(df_in, region_label, icc_col):
+    vals = df_in[icc_col].dropna()
+    return {
+        "Region" : region_label,
+        "N"      : len(vals),
+        "Mean"   : round(vals.mean(), 4) if len(vals) > 0 else np.nan,
+        "Min"    : round(vals.min(),  4) if len(vals) > 0 else np.nan,
+        "Max"    : round(vals.max(),  4) if len(vals) > 0 else np.nan,
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Determine which ICC columns to use based on ICC_TYPE
@@ -118,9 +130,9 @@ avg_sub = (
 PREFIX = "icc_c" if ICC_TYPE == "consistency" else "icc_a"
 
 COMPARISONS = {
-    "MPF vs MPFreg"   : (COL[f"{PREFIX}_1"], COL[f"{PREFIX}_lo_1"], COL[f"{PREFIX}_hi_1"]),
-    "MPF vs MPRAGE"   : (COL[f"{PREFIX}_2"], COL[f"{PREFIX}_lo_2"], COL[f"{PREFIX}_hi_2"]),
-    "MPFreg vs MPRAGE": (COL[f"{PREFIX}_3"], COL[f"{PREFIX}_lo_3"], COL[f"{PREFIX}_hi_3"]),
+    "MPFreg vs MPF"   : (COL[f"{PREFIX}_1"], COL[f"{PREFIX}_lo_1"], COL[f"{PREFIX}_hi_1"]),
+    "MPRAGE vs MPF"   : (COL[f"{PREFIX}_2"], COL[f"{PREFIX}_lo_2"], COL[f"{PREFIX}_hi_2"]),
+    "MPRAGE vs MPFreg": (COL[f"{PREFIX}_3"], COL[f"{PREFIX}_lo_3"], COL[f"{PREFIX}_hi_3"]),
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -387,3 +399,36 @@ subcortical_out = OUTPUT_DIR / f"icc_forest_subcortical_{ICC_TYPE}_{SHEET_NAME}.
 fig_sub.savefig(subcortical_out, dpi=150, bbox_inches="tight")
 plt.close(fig_sub)
 print(f"Saved: {subcortical_out}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Print and save ICC summary statistics
+# ─────────────────────────────────────────────────────────────────────────────
+summary_rows = []
+
+for comp_name, (icc_col, lo_col, hi_col) in COMPARISONS.items():
+
+    # GM
+    gm_data = avg[avg[COL["region"]] == "GM"]
+    row = compute_icc_stats(gm_data, f"{comp_name} — GM", icc_col)
+    row["Comparison"] = comp_name
+    summary_rows.append(row)
+
+    # WM
+    wm_data = avg[avg[COL["region"]] == "WM"]
+    row = compute_icc_stats(wm_data, f"{comp_name} — WM", icc_col)
+    row["Comparison"] = comp_name
+    summary_rows.append(row)
+
+    # Subcortical
+    row = compute_icc_stats(avg_sub, f"{comp_name} — Subcortical", icc_col)
+    row["Comparison"] = comp_name
+    summary_rows.append(row)
+
+summary_df = pd.DataFrame(summary_rows)[["Comparison", "Region", "N", "Mean", "Min", "Max"]]
+
+print("\n── ICC Summary Statistics ──")
+print(summary_df.to_string(index=False))
+
+stats_out = OUTPUT_DIR / f"icc_summary_stats_{ICC_TYPE}_{SHEET_NAME}.csv"
+summary_df.to_csv(stats_out, index=False)
+print(f"\nSaved: {stats_out}")
