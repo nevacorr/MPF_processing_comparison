@@ -326,11 +326,9 @@ for idx, (comp_name, (cvw_col, lo_col, hi_col)) in enumerate(comp_items):
 # ── Shared legend ──
 gm_patch  = mpatches.Patch(color=GM_COLOR, label=f"Gray Matter")
 wm_patch  = mpatches.Patch(color=WM_COLOR, label=f"White Matter")
-ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
-                       lw=1.2, label="0")
 
 fig.legend(
-    handles=[gm_patch, wm_patch, ref_line],
+    handles=[gm_patch, wm_patch],
     loc="upper right",
     ncol=3,
     fontsize=FONT["legend"],
@@ -378,11 +376,9 @@ for idx, (comp_name, (cvw_col, lo_col, hi_col)) in enumerate(comp_items):
 
 # ── Shared legend ──
 sub_patch    = mpatches.Patch(color=SUBCORTICAL_COLOR, label=f"Subcortical")
-ref_line_sub = plt.Line2D([0], [0], color="gray", linestyle="--",
-                          lw=1.2, label="0")
 
 fig_sub.legend(
-    handles=[sub_patch, ref_line_sub],
+    handles=[sub_patch],
     loc="upper right",
     ncol=3,
     fontsize=FONT["legend"],
