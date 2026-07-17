@@ -27,7 +27,7 @@ from pathlib import Path
 # ── File path ─────────────────────────────────────────────────────────────────
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingICC.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
-SHEET_NAME = "MPF" # "Volume" or "MPF"
+SHEET_NAME = "Volume" # "Volume" or "MPF"
 
 # ── Column name map ───────────────────────────────────────────────────────────
 
