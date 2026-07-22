@@ -27,7 +27,7 @@ from pathlib import Path
 # ── File path ─────────────────────────────────────────────────────────────────
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingICC.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
-SHEET_NAME = "Volume" # "Volume" or "MPF"
+SHEET_NAME = "MPF" # "Volume" or "MPF"
 
 # ── Column name map ───────────────────────────────────────────────────────────
 
@@ -265,7 +265,7 @@ def make_single_plot(avg_df, icc_col, lo_col, hi_col, title, outfile):
     fig, ax = plt.subplots(figsize=(10, max(6, N_REGIONS * 0.38)))
     draw_panel(ax, avg_df, icc_col, lo_col, hi_col, show_yticks=True)
 
-    ax.set_xlabel(f"ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
+    ax.set_xlabel(f"{SHEET_NAME} ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
     ax.set_ylabel("DK Atlas Region", fontsize=FONT["ylabel"])
     ax.set_title(title, fontsize=FONT["title"], fontweight="bold", pad=10)
 
@@ -342,7 +342,7 @@ for idx, (comp_name, (icc_col, lo_col, hi_col)) in enumerate(comp_items):
     draw_subcortical_panel(ax_bottom, avg_sub, icc_col, lo_col, hi_col,
                            show_yticks=show_yticks)
     ax_bottom.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-    ax_bottom.set_xlabel(f"ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
+    ax_bottom.set_xlabel(f"{SHEET_NAME} ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
     if show_yticks:
         ax_bottom.set_ylabel("Region", fontsize=FONT["ylabel"])
 
