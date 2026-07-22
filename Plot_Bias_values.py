@@ -1,20 +1,3 @@
-"""
-Bias Forest Plot — Desikan-Killiany Atlas, GM & WM
-Averaged across hemispheres.
-
-Inputs:
-    Excel spreadsheet with columns:
-        Region          : "GM", "WM", or "Subcortical"
-        Subregion       : DK atlas region name
-        Side            : "Left" or "Right"
-
-        For each comparison (MPF-MPFreg, MPF-MPRAGE, MPFreg-MPRAGE):
-            Bias_<comparison>       : bias (method A - method B)
-            Lower_CI_<comparison>   : lower CI
-            Upper_CI_<comparison>   : upper CI
-
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -321,115 +304,103 @@ X_LIM        = (global_min - padding, global_max + padding)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. Combined GM + WM figure — all three comparisons side by side
+# 9. Combined figure — cortical (GM/WM) on top, subcortical below,
+#    all three comparisons side by side
 # ─────────────────────────────────────────────────────────────────────────────
 comp_items = list(COMPARISONS.items())
 n_panels   = len(comp_items)
-fig_height = max(8, N_REGIONS * 0.38)
-fig_width  = 8 * n_panels
+
+# Row heights proportional to the number of regions in each row, so marker
+# spacing looks visually consistent between the cortical and subcortical rows.
+height_ratios = [N_REGIONS, n_sub_regions]
+fig_width     = 8 * n_panels
+row_unit      = 0.38                                  # inches per region row
+fig_height    = max(8, N_REGIONS * row_unit) + max(6, n_sub_regions * row_unit)
 
 fig, axes = plt.subplots(
-    1, n_panels,
+    2, n_panels,
     figsize=(fig_width, fig_height),
+    gridspec_kw={"height_ratios": height_ratios, "hspace": 0.15},
     sharey=False,
 )
 
+# Guarantee axes is always 2D (n_panels could be 1)
+axes = np.atleast_2d(axes)
+if axes.shape[0] != 2:
+    axes = axes.T
+
+# Panel-label font size (fixed, independent of FONT dict — meant to stand out)
+PANEL_LABEL_FONT = FONT["title"] + 8
+
 for idx, (comp_name, (bias_col, lo_col, hi_col, pval_col)) in enumerate(comp_items):
-    ax          = axes[idx]
+    ax_top    = axes[0, idx]
+    ax_bottom = axes[1, idx]
     show_yticks = (idx == 0)
 
-    draw_panel(ax, avg, bias_col, lo_col, hi_col, pval_col, show_yticks=show_yticks)
-
-    ax.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
-    ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-
+    # ── Top row: cortical GM/WM ──
+    draw_panel(ax_top, avg, bias_col, lo_col, hi_col, pval_col, show_yticks=show_yticks)
+    ax_top.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
+    ax_top.set_xlabel("")                 # no x label on top row — shared axis below
     if show_yticks:
-        ax.set_ylabel("Region", fontsize=FONT["ylabel"])
+        ax_top.set_ylabel("Region", fontsize=FONT["ylabel"])
 
-# ── Shared legend ──
-gm_patch  = mpatches.Patch(color=GM_COLOR, label=f"Gray Matter (p < {ALPHA_THRESHOLD})")
-wm_patch  = mpatches.Patch(color=WM_COLOR, label=f"White Matter (p < {ALPHA_THRESHOLD})")
-ns_patch  = mpatches.Patch(color=NS_COLOR,  label="Not significant")
-ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
-                       lw=1.2, label="Difference = 0")
+    # ── Bottom row: subcortical ──
+    draw_subcortical_panel(ax_bottom, avg_sub, bias_col, lo_col, hi_col, pval_col,
+                           SUB_REGION_ORDER, show_yticks=show_yticks)
+    ax_bottom.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
+    ax_bottom.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
+    if show_yticks:
+        ax_bottom.set_ylabel("Subcortical Region", fontsize=FONT["ylabel"])
+
+# ── Row labels "A" / "B" — outside the plot area, above and left of the
+#    y-axis region labels. Negative x / >1 y in axes-fraction coordinates
+#    place the text outside the panel; tune -0.25/1.08 if labels overlap
+#    the region names (longer names need a more negative x).
+axes[0, 0].text(
+    -0.45, 1.0, "A",
+    transform=axes[0, 0].transAxes,
+    fontsize=PANEL_LABEL_FONT, fontweight="bold",
+    ha="left", va="bottom", zorder=10, clip_on=False,
+)
+axes[1, 0].text(
+    -0.45, 1.0, "B",
+    transform=axes[1, 0].transAxes,
+    fontsize=PANEL_LABEL_FONT, fontweight="bold",
+    ha="left", va="bottom", zorder=10, clip_on=False,
+)
+
+# ── Shared legend (cortical + subcortical) — placed just under the title ──
+gm_patch     = mpatches.Patch(color=GM_COLOR, label=f"Gray Matter (p < {ALPHA_THRESHOLD})")
+wm_patch     = mpatches.Patch(color=WM_COLOR, label=f"White Matter (p < {ALPHA_THRESHOLD})")
+sub_patch    = mpatches.Patch(color=SUBCORTICAL_COLOR, label=f"Subcortical (p < {ALPHA_THRESHOLD})")
+ns_patch     = mpatches.Patch(color=NS_COLOR,  label="Not significant")
+ref_line     = plt.Line2D([0], [0], color="gray", linestyle="--",
+                          lw=1.2, label="Difference = 0")
 
 fig.legend(
-    handles=[gm_patch, wm_patch, ns_patch, ref_line],
-    loc="upper right",
-    ncol=4,
+    handles=[gm_patch, wm_patch, sub_patch, ns_patch, ref_line],
+    loc="upper center",
+    ncol=5,
     fontsize=FONT["legend"],
     frameon=False,
-    bbox_to_anchor=(1.0, 0.985),
+    bbox_to_anchor=(0.6, 0.94),
 )
 
 fig.suptitle(
-    f"{MEASURE_LABEL} — All Comparisons - {SHEET_NAME}\nDK Atlas, Hemispheres Averaged",
+    f"{MEASURE_LABEL} — All Comparisons - {SHEET_NAME}\nDK Atlas + Subcortical, Hemispheres Averaged",
     fontsize=FONT["title"] + 1,
     fontweight="bold",
-    y=1.01,
+    y=1.06,
 )
 
-plt.tight_layout()
-combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_all_comparisons_{SHEET_NAME}.png"
+plt.tight_layout(rect=[0, 0, 1, 0.94])
+combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_combined_{SHEET_NAME}.png"
 fig.savefig(combined_out, dpi=150, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 10. Subcortical combined figure — all three comparisons side by side
-# ─────────────────────────────────────────────────────────────────────────────
-fig_height_sub = max(6, n_sub_regions * 0.38)
-
-fig_sub, axes_sub = plt.subplots(
-    1, n_panels,
-    figsize=(fig_width, fig_height_sub),
-    sharey=False,
-)
-
-for idx, (comp_name, (bias_col, lo_col, hi_col, pval_col)) in enumerate(comp_items):
-    ax          = axes_sub[idx]
-    show_yticks = (idx == 0)
-
-    draw_subcortical_panel(ax, avg_sub, bias_col, lo_col, hi_col, pval_col,
-                           SUB_REGION_ORDER, show_yticks=show_yticks)
-
-    ax.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
-    ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-
-    if show_yticks:
-        ax.set_ylabel("Subcortical Region", fontsize=FONT["ylabel"])
-
-# ── Shared legend ──
-sub_patch    = mpatches.Patch(color=SUBCORTICAL_COLOR, label=f"Subcortical(p < {ALPHA_THRESHOLD})")
-ns_patch_sub  = mpatches.Patch(color=NS_COLOR, label="Not significant")
-ref_line_sub = plt.Line2D([0], [0], color="gray", linestyle="--",
-                          lw=1.2, label="Difference = 0")
-
-fig_sub.legend(
-    handles=[sub_patch, ns_patch_sub, ref_line_sub],
-    loc="upper right",
-    ncol=3,
-    fontsize=FONT["legend"],
-    frameon=False,
-    bbox_to_anchor=(1.0, 0.96),
-)
-
-fig_sub.suptitle(
-    f"{MEASURE_LABEL} — All Comparisons - {SHEET_NAME}\nSubcortical Regions, Hemispheres Averaged",
-    fontsize=FONT["title"] + 1,
-    fontweight="bold",
-    y=1.01,
-)
-
-plt.tight_layout()
-subcortical_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_subcortical_{SHEET_NAME}.png"
-fig_sub.savefig(subcortical_out, dpi=150, bbox_inches="tight")
-plt.close(fig_sub)
-print(f"Saved: {subcortical_out}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 11. Print and save summary statistics
+# 10. Print and save summary statistics
 # ─────────────────────────────────────────────────────────────────────────────
 summary_rows = []
 
