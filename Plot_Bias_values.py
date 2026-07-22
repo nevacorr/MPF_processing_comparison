@@ -14,15 +14,15 @@ MEASURE_TYPE = "relative"               # "absolute" or "relative" — ignored i
 
 if DATA_TYPE == "Volume":
     SHEET_NAME    = "Volume-Mean Relative Difference"
-    MEASURE_LABEL = "Mean Relative Difference (%)"
+    MEASURE_LABEL = "Volume Mean Relative Difference (%)"
     FILE_LABEL    = "volume_mean_relative_difference"
 elif MEASURE_TYPE == "absolute":
     SHEET_NAME    = "MPF-Mean Absolute Difference"
-    MEASURE_LABEL = "Mean Absolute Difference (%)"
+    MEASURE_LABEL = "MPF Mean Absolute Difference (%)"
     FILE_LABEL    = "mpf_mean_absolute_difference"
 else:
     SHEET_NAME    = "MPF-Mean Relative Difference"
-    MEASURE_LABEL = "Mean Relative Difference (%)"
+    MEASURE_LABEL = "MPF Mean Relative Difference (%)"
     FILE_LABEL    = "mpf_mean_relative_difference"
 
 # ── Column name map ───────────────────────────────────────────────────────────
@@ -274,7 +274,7 @@ def draw_subcortical_panel(ax, sub_df, bias_col, lo_col, hi_col, pval_col,
 
     ax.set_yticks(range(n_sub))
     if show_yticks:
-        ax.set_yticklabels(sub_region_order, fontsize=FONT["ytick"])
+        ax.set_yticklabels([r.lower() for r in sub_region_order], fontsize=FONT["ytick"])
     else:
         ax.set_yticklabels([])
 
@@ -350,7 +350,7 @@ for idx, (comp_name, (bias_col, lo_col, hi_col, pval_col)) in enumerate(comp_ite
     ax_bottom.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
     ax_bottom.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
     if show_yticks:
-        ax_bottom.set_ylabel("Subcortical Region", fontsize=FONT["ylabel"])
+        ax_bottom.set_ylabel("Region", fontsize=FONT["ylabel"])
 
 # ── Row labels "A" / "B" — outside the plot area, above and left of the
 #    y-axis region labels. Negative x / >1 y in axes-fraction coordinates
@@ -383,7 +383,7 @@ fig.legend(
     ncol=5,
     fontsize=FONT["legend"],
     frameon=False,
-    bbox_to_anchor=(0.6, 0.94),
+    bbox_to_anchor=(0.45, 0.94),
 )
 
 fig.suptitle(
@@ -395,7 +395,7 @@ fig.suptitle(
 
 plt.tight_layout(rect=[0, 0, 1, 0.94])
 combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_combined_{SHEET_NAME}.png"
-fig.savefig(combined_out, dpi=150, bbox_inches="tight")
+fig.savefig(combined_out, dpi=300, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
 

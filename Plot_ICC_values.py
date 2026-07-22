@@ -249,7 +249,7 @@ def draw_subcortical_panel(ax, sub_df, icc_col, lo_col, hi_col,
 
     ax.set_yticks(range(n_sub))
     if show_yticks:
-        ax.set_yticklabels(sub_region_order, fontsize=FONT["ytick"])
+        ax.set_yticklabels([r.lower() for r in sub_region_order], fontsize=FONT["ytick"])
     else:
         ax.set_yticklabels([])
 
@@ -292,116 +292,107 @@ for comp_name, (icc_col, lo_col, hi_col) in COMPARISONS.items():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Combined figure — all three comparisons side by side
+# 7. Combined figure — cortical (GM/WM) on top, subcortical below,
+#    all three comparisons side by side
 #
-#    • All panels share the SAME fixed region order (average GM ICC)
-#    • Y-axis region labels appear on the LEFT panel only
-#    • Shared legend below the figure
+#    • All panels share the SAME fixed region order within their row
+#      (top row: average GM ICC; bottom row: average subcortical ICC)
+#    • Y-axis region labels appear on the LEFT column only
+#    • Row labels "A" (cortical) / "B" (subcortical) sit outside the
+#      plot area, above and left of the y-axis labels
+#    • Shared legend above the panels
 # ─────────────────────────────────────────────────────────────────────────────
 comp_items  = list(COMPARISONS.items())       # [(name, (icc, lo, hi)), ...]
 n_panels    = len(comp_items)
-fig_height  = max(8, N_REGIONS * 0.38)
-fig_width   = 8 * n_panels                   # ~8 inches per panel
+
+n_sub_regions = avg_sub[COL["subregion"]].nunique()
+height_ratios = [N_REGIONS, n_sub_regions]
+row_unit      = 0.38                                  # inches per region row
+fig_width     = 8 * n_panels                          # ~8 inches per panel
+fig_height    = max(8, N_REGIONS * row_unit) + max(6, n_sub_regions * row_unit)
 
 fig, axes = plt.subplots(
-    1, n_panels,
+    2, n_panels,
     figsize=(fig_width, fig_height),
+    gridspec_kw={"height_ratios": height_ratios, "hspace": 0.15},
     sharey=False,          # sharey=False so we control labels manually
 )
 
+# Guarantee axes is always 2D (n_panels could be 1)
+axes = np.atleast_2d(axes)
+if axes.shape[0] != 2:
+    axes = axes.T
+
+PANEL_LABEL_FONT = FONT["title"] + 8
+
 for idx, (comp_name, (icc_col, lo_col, hi_col)) in enumerate(comp_items):
-    ax           = axes[idx]
-    show_yticks  = (idx == 0)              # labels only on leftmost panel
+    ax_top      = axes[0, idx]
+    ax_bottom   = axes[1, idx]
+    show_yticks = (idx == 0)              # labels only on leftmost column
 
-    draw_panel(ax, avg, icc_col, lo_col, hi_col, show_yticks=show_yticks)
-
-    ax.set_xlabel(f"ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
-    ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-
+    # ── Top row: cortical GM/WM ──
+    draw_panel(ax_top, avg, icc_col, lo_col, hi_col, show_yticks=show_yticks)
+    ax_top.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
+    ax_top.set_xlabel("")
+    ax_top.tick_params(axis="x", labelbottom=False)
     if show_yticks:
-        ax.set_ylabel("DK Atlas Region", fontsize=FONT["ylabel"])
+        ax_top.set_ylabel("Region", fontsize=FONT["ylabel"])
 
-# ── Shared legend below all panels ──
-gm_patch = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
-wm_patch = mpatches.Patch(color=WM_COLOR, label="White Matter")
+    # ── Bottom row: subcortical ──
+    draw_subcortical_panel(ax_bottom, avg_sub, icc_col, lo_col, hi_col,
+                           show_yticks=show_yticks)
+    ax_bottom.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
+    ax_bottom.set_xlabel(f"ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
+    if show_yticks:
+        ax_bottom.set_ylabel("Region", fontsize=FONT["ylabel"])
+
+# ── Row labels "A" / "B" — outside the plot area, above and left of the
+#    y-axis region labels. Tune -0.25/1.08 if labels overlap the region
+#    names (longer names need a more negative x).
+axes[0, 0].text(
+    -0.45, 1.0, "A",
+    transform=axes[0, 0].transAxes,
+    fontsize=PANEL_LABEL_FONT, fontweight="bold",
+    ha="left", va="bottom", zorder=10, clip_on=False,
+)
+axes[1, 0].text(
+    -0.45, 1.0, "B",
+    transform=axes[1, 0].transAxes,
+    fontsize=PANEL_LABEL_FONT, fontweight="bold",
+    ha="left", va="bottom", zorder=10, clip_on=False,
+)
+
+# ── Shared legend (cortical + subcortical) ──
+gm_patch  = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
+wm_patch  = mpatches.Patch(color=WM_COLOR, label="White Matter")
+sub_patch = mpatches.Patch(color=SUBCORTICAL_COLOR, label="Subcortical")
 ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
                        lw=1.2, label=f"ICC = {REFERENCE_LINE}")
 
 fig.legend(
-    handles=[gm_patch, wm_patch, ref_line],
-    loc="upper right",
-    ncol=3,
+    handles=[gm_patch, wm_patch, sub_patch, ref_line],
+    loc="upper center",
+    ncol=4,
     fontsize=FONT["legend"],
     frameon=False,
-    bbox_to_anchor=(1.0, 0.99),
+    bbox_to_anchor=(0.45, 0.94),
 )
 
 fig.suptitle(
-    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons - {SHEET_NAME}\nDK Atlas, Hemispheres Averaged",
+    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons - {SHEET_NAME}\nDK Atlas + Subcortical, Hemispheres Averaged",
     fontsize=FONT["title"] + 1,
     fontweight="bold",
-    y=1.01,
+    y=1.06,
 )
 
-plt.tight_layout()
-combined_out = OUTPUT_DIR / f"icc_forest_all_comparisons_{ICC_TYPE}_{SHEET_NAME}.png"
-fig.savefig(combined_out, dpi=150, bbox_inches="tight")
+plt.tight_layout(rect=[0, 0, 1, 0.94])
+combined_out = OUTPUT_DIR / f"icc_forest_combined_{ICC_TYPE}_{SHEET_NAME}.png"
+fig.savefig(combined_out, dpi=300, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Subcortical combined figure — all three comparisons side by side
-# ─────────────────────────────────────────────────────────────────────────────
-n_sub_regions = avg_sub[COL["subregion"]].nunique()
-fig_height_sub = max(6, n_sub_regions * 0.38)
-
-fig_sub, axes_sub = plt.subplots(
-    1, n_panels,
-    figsize=(fig_width, fig_height_sub),
-    sharey=False,
-)
-
-for idx, (comp_name, (icc_col, lo_col, hi_col)) in enumerate(comp_items):
-    ax          = axes_sub[idx]
-    show_yticks = (idx == 0)
-
-    draw_subcortical_panel(ax, avg_sub, icc_col, lo_col, hi_col,
-                           show_yticks=show_yticks)
-
-    ax.set_xlabel(f"ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
-    ax.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-
-    if show_yticks:
-        ax.set_ylabel("Subcortical Region", fontsize=FONT["ylabel"])
-
-# Legend
-sub_patch = mpatches.Patch(color=SUBCORTICAL_COLOR, label="Subcortical")
-ref_line_sub = plt.Line2D([0], [0], color="gray", linestyle="--",
-                          lw=1.2, label=f"ICC = {REFERENCE_LINE}")
-fig_sub.legend(
-    handles=[sub_patch, ref_line_sub],
-    loc="upper right",
-    ncol=2,
-    fontsize=FONT["legend"],
-    frameon=False,
-    bbox_to_anchor=(1.0, 0.99),
-)
-
-fig_sub.suptitle(
-    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons - {SHEET_NAME}\nSubcortical Regions, Hemispheres Averaged",
-    fontsize=FONT["title"] + 1,
-    fontweight="bold",
-    y=1.01,
-)
-
-plt.tight_layout()
-subcortical_out = OUTPUT_DIR / f"icc_forest_subcortical_{ICC_TYPE}_{SHEET_NAME}.png"
-fig_sub.savefig(subcortical_out, dpi=150, bbox_inches="tight")
-plt.close(fig_sub)
-print(f"Saved: {subcortical_out}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 9. Print and save ICC summary statistics
+# 8. Print and save ICC summary statistics
 # ─────────────────────────────────────────────────────────────────────────────
 summary_rows = []
 

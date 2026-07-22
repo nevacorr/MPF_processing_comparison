@@ -31,16 +31,16 @@ from pathlib import Path
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingBias.xlsx"
 OUTPUT_DIR = Path(".")
 
-DATA_TYPE    = "MPF"                    # "MPF" or "Volume"
+DATA_TYPE    = ("Volume")                    # "MPF" or "Volume"
 METHOD = "(SDw/Mean)"
 
 if DATA_TYPE == "Volume":
     SHEET_NAME    = "Volume-Repeatability CVw"
-    MEASURE_LABEL = "CVw (%)"
+    MEASURE_LABEL = "Volume CVw (%)"
     FILE_LABEL    = "volume_CVw"
 else:
     SHEET_NAME    = "MPF-Repeatability CVw"
-    MEASURE_LABEL = "CVw (%)"
+    MEASURE_LABEL = "MPF CVw (%)"
     FILE_LABEL    = "mpf_CVw"
 
 # ── Column name map ───────────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ fig.suptitle(
 
 plt.tight_layout()
 combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_combined_grouped_{SHEET_NAME}.png"
-fig.savefig(combined_out, dpi=150, bbox_inches="tight")
+fig.savefig(combined_out, dpi=300, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
 

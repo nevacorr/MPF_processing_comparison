@@ -25,7 +25,7 @@ from pathlib import Path
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingBias.xlsx"
 OUTPUT_DIR = Path(".")
 
-DATA_TYPE    = "MPF"                    # "MPF" or "Volume"
+DATA_TYPE    = "Volume"                    # "MPF" or "Volume"
 METHOD = "(SDw/Mean)"
 
 if DATA_TYPE == "Volume":
