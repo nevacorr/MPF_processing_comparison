@@ -5,7 +5,9 @@ Averaged across hemispheres.
 Layout: ONE panel per tissue type (GM, WM, Subcortical).
 Within each panel, every region shows all three workflows dodged
 vertically, so a reader can directly compare CVw and CIs across
-methods for the same region.
+methods for the same region. A fixed-position symbol column marks
+which pairwise comparisons were statistically significant for that
+region: * = MPF vs MPFreg, † = MPF vs MPRAGE, ‡ = MPFreg vs MPRAGE.
 
 Inputs:
     Excel spreadsheet with columns:
@@ -17,6 +19,10 @@ Inputs:
             CVw                     : CVw
             Lower_CI                : lower CI
             Upper_CI                : upper CI
+
+        For each pairwise comparison (MPFvMPFreg, MPFvMPRAGE, MPFregvMPRAGE):
+            Adj. P-value <comparison> : adjusted p-value
+            ← UPDATE THESE COLUMN NAMES IN THE COL DICT BELOW IF YOURS DIFFER
 
 """
 
@@ -32,7 +38,7 @@ EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity pape
 OUTPUT_DIR = Path(".")
 
 DATA_TYPE    = ("Volume")                    # "MPF" or "Volume"
-METHOD = "(SDw/Mean)"
+METHOD = "(SDw/Mean)"                        #"(RMS) or (SDw/Mean)"
 
 if DATA_TYPE == "Volume":
     SHEET_NAME    = "Volume-Repeatability CVw"
@@ -64,12 +70,18 @@ COL = {
     "cvw_3"    : f"CVw {METHOD} MPRAGE",
     "cvw_lo_3" : "Lower CI MPRAGE",
     "cvw_hi_3" : "Upper CI MPRAGE",
+
+    # ── Pairwise significance (adjusted p-values) ──────────────────────────
+    "pval_mpf_mpfreg"    : f"AdjP_CVw{METHOD}_MPFvMPFreg",
+    "pval_mpf_mprage"    : f"AdjP_CVw{METHOD}_MPFvMPRAGE",
+    "pval_mpfreg_mprage" : f"AdjP_CVw{METHOD}_MPFregvMPRAGE",
 }
 
 # ── Plotting options ───────────────────────────────────────────────────────────
 REFERENCE_LINE    = 0.0
 MARKER_SIZE       = 6
 LINEWIDTH         = 1.4
+ALPHA_THRESHOLD   = 0.05
 
 # Method colors — one consistent color per workflow, used across all panels
 METHOD_COLORS = {
@@ -93,6 +105,14 @@ METHOD_OFFSETS = {
     "MPFreg":  0.0,
     "MPRAGE": -DODGE_STEP,
 }
+
+# ── Pairwise comparison → symbol map ───────────────────────────────────────────
+# Order here determines the order symbols are concatenated in the column
+PAIR_DEFS = [
+    ("MPF", "MPFreg", "pval_mpf_mpfreg",    "*"),
+    ("MPF", "MPRAGE", "pval_mpf_mprage",    "\u2020"),   # †
+    ("MPFreg", "MPRAGE", "pval_mpfreg_mprage", "\u2021"),  # ‡
+]
 
 # ── Sort order ────────────────────────────────────────────────────────────────
 # "gm_cvw"     : sort by average GM cvw across all workflows
@@ -127,6 +147,8 @@ cvw_cols = [v for k, v in COL.items() if k not in ("region", "subregion", "side"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Average Left and Right hemispheres for each Subregion × Region
+#    (p-value columns are included here too — assumed to be identical across
+#    hemispheres already, or you may want a different aggregation; adjust if not)
 # ─────────────────────────────────────────────────────────────────────────────
 avg = (
     df.groupby([COL["subregion"], COL["region"]])[cvw_cols]
@@ -191,13 +213,19 @@ SUB_REGION_ORDER = compute_region_order(avg_sub)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Shared x-axis limits across all panels
+#    Extra right-side padding is reserved for the significance symbol column.
 # ─────────────────────────────────────────────────────────────────────────────
 all_lo_cols = [COL["cvw_lo_1"], COL["cvw_lo_2"], COL["cvw_lo_3"]]
 all_hi_cols = [COL["cvw_hi_1"], COL["cvw_hi_2"], COL["cvw_hi_3"]]
 global_min  = min(avg[all_lo_cols].min().min(), avg_sub[all_lo_cols].min().min())
 global_max  = max(avg[all_hi_cols].max().max(), avg_sub[all_hi_cols].max().max())
-padding     = (global_max - global_min) * 0.05
-X_LIM       = (global_min - padding, global_max + padding)
+data_range  = global_max - global_min
+padding     = data_range * 0.05
+
+# Reserve ~15% of the data range as room for the symbol column, inside the axes
+SYMBOL_COL_FRAC = 0.90    # symbol column sits at 90% of the way from data-min to xlim-max
+X_LIM       = (global_min - padding, global_max + data_range * 0.20)
+SYMBOL_COL_X = global_min + (X_LIM[1] - global_min) * SYMBOL_COL_FRAC
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Core draw function — single tissue type, all methods dodged per region
@@ -205,7 +233,8 @@ X_LIM       = (global_min - padding, global_max + padding)
 def draw_grouped_panel(ax, tissue_df, region_order, lowercase_labels=False):
     """
     Draw all three workflows, dodged vertically, for every region in
-    region_order, onto a single axis.
+    region_order, onto a single axis. Also draws a fixed-position column
+    of significance symbols (black) per region.
     """
     n_regions = len(region_order)
     y_pos = {r: i for i, r in enumerate(region_order)}
@@ -234,6 +263,21 @@ def draw_grouped_panel(ax, tissue_df, region_order, lowercase_labels=False):
         if i % 2 == 0:
             ax.axhspan(i - ROW_HEIGHT / 2, i + ROW_HEIGHT / 2,
                        color="whitesmoke", zorder=0)
+
+    # ── Significance symbol column — fixed x, black, one row per region ──
+    for _, row in tissue_df.iterrows():
+        r = row[COL["subregion"]]
+        if r not in y_pos:
+            continue
+        y = y_pos[r]
+        syms = []
+        for wf_a, wf_b, pval_key, symbol in PAIR_DEFS:
+            pval_col = COL[pval_key]
+            if pval_col in row.index and pd.notna(row[pval_col]) and row[pval_col] < ALPHA_THRESHOLD:
+                syms.append(symbol)
+        if syms:
+            ax.text(SYMBOL_COL_X, y, " ".join(syms), fontsize=FONT["ytick"] - 4,
+                    color="black", va="center", ha="center", fontweight="bold", zorder=5)
 
     # ── Y-axis ──
     display_labels = [r.lower() for r in region_order] if lowercase_labels else region_order
@@ -299,18 +343,33 @@ for i, (ax, (tissue_df, region_order, panel_title, ylabel, lowercase)) in enumer
     if i == 0:
         ax.set_ylabel(ylabel, fontsize=FONT["ylabel"])
 
-    if i == n_cols - 1:
-        ax.legend(handles=method_legend_handles(), loc="upper right",
-                  fontsize=FONT["legend"], frameon=False)
+# ── Shared legend — placed above all panels, out of the way of the data/symbols ──
+fig.legend(
+    handles=method_legend_handles(),
+    loc="upper center",
+    bbox_to_anchor=(0.5, 0.96),
+    ncol=len(WORKFLOWS),
+    fontsize=FONT["legend"],
+    frameon=False,
+)
 
 fig.suptitle(
     f"{DATA_TYPE} CVw by Workflow ({SHEET_NAME})",
     fontsize=FONT["title"] + 2,
     fontweight="bold",
-    y=1.02,
+    y=1.08,
 )
 
-plt.tight_layout()
+# ── Footnote defining the significance symbols ──
+fig.text(
+    0.01, -0.01,
+    (f"*  MPF vs MPFreg, adj.p < {ALPHA_THRESHOLD}     "
+     f"\u2020  MPF vs MPRAGE, adj.p < {ALPHA_THRESHOLD}     "
+     f"\u2021  MPFreg vs MPRAGE, adj.p < {ALPHA_THRESHOLD}"),
+    fontsize=FONT["legend"] -1, va="top",
+)
+
+plt.tight_layout(rect=[0, 0, 1, 0.95])
 combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_combined_grouped_{SHEET_NAME}.png"
 fig.savefig(combined_out, dpi=300, bbox_inches="tight")
 plt.close(fig)
