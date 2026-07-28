@@ -9,6 +9,18 @@ OUTPUT_DIR = Path(".")
 DATA_TYPE  = "MPF"    # "Volume" or "MPF" — also controls which sheet is read
 CEREBRUM_LABEL = "cerebrum"  # exact name of the cerebrum subregion in your data
 
+GM_COLOR = "#4C72B0"    # blue
+WM_COLOR = "#E07B39"    # orange
+
+FONT = {
+    "title"  : 15,
+    "xlabel" : 17,
+    "ylabel" : 17,
+    "xtick"  : 17,
+    "ytick"  : 11,
+    "legend" : 17,
+}
+
 # ── 1. Load data ──────────────────────────────────────────────────────────────
 df = pd.read_excel(EXCEL_PATH, sheet_name=DATA_TYPE)
 
@@ -30,17 +42,17 @@ df["Subregion"] = (
 # ── 5. Define the three comparisons ──────────────────────────────────────────
 comparisons = [
     {
-        "label": "MPF vs MPFreg",
+        "label": "MPFreg vs MPF",
         "lower": "Lower MPFvMPFreg",
         "upper": "Upper MPFvMPFreg",
     },
     {
-        "label": "MPF vs MPRAGE",
+        "label": "MPRAGE vs MPF",
         "lower": "Lower MPFvMPRAGE",
         "upper": "Upper MPFvMPRAGE",
     },
     {
-        "label": "MPFreg vs MPRAGE",
+        "label": "MPRAGE vs MPFreg",
         "lower": "Lower MPFregvMPRAGE",
         "upper": "Upper MPFregvMPRAGE",
     },
@@ -63,9 +75,25 @@ if CEREBRUM_LABEL in subregion_order:
     subregion_order.remove(CEREBRUM_LABEL)
     subregion_order.append(CEREBRUM_LABEL)
 
-# ── 7. Build figure with one panel per comparison ─────────────────────────────
+# ── 7. Compute global x-axis limits from AVERAGED values (same as plotted) ───
+all_widths = []
+for comp in comparisons:
+    df["LOA_width"] = df[comp["upper"]] - df[comp["lower"]]
+    df_avg = df.groupby(["Region", "Subregion"], as_index=False)["LOA_width"].mean()
+    all_widths.extend(df_avg["LOA_width"].dropna().tolist())
+x_min = min(all_widths)
+x_max = max(all_widths)
+x_pad = (x_max - x_min) * 0.05
+x_lim = (x_min - x_pad, x_max + x_pad)
+
+# ── 8. Build figure with one panel per comparison ─────────────────────────────
 fig, axes = plt.subplots(1, 3, figsize=(20, 8))
-fig.suptitle(f"[{DATA_TYPE}]  LOA Width — GM vs WM", fontsize=14, fontweight="bold")
+fig.suptitle(f"[{DATA_TYPE}]  LOA Width — GM vs WM", fontsize=FONT["title"], fontweight="bold")
+
+legend_handles = [
+    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=GM_COLOR, markersize=8, label="GM"),
+    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=WM_COLOR, markersize=8, label="WM"),
+]
 
 for ax, comp in zip(axes, comparisons):
     df["LOA_width"] = df[comp["upper"]] - df[comp["lower"]]
@@ -89,19 +117,25 @@ for ax, comp in zip(axes, comparisons):
     for i, row in wide.iterrows():
         ax.plot([row["GM"], row["WM"]], [i, i], color="gray", linewidth=0.8, zorder=1)
 
-    ax.scatter(wide["GM"], y, color="steelblue", zorder=2, label="GM", s=40)
-    ax.scatter(wide["WM"], y, color="tomato", zorder=2, label="WM", s=40)
+    sc_gm = ax.scatter(wide["GM"], y, color=GM_COLOR, zorder=2, label="GM", s=40)
+    sc_wm = ax.scatter(wide["WM"], y, color=WM_COLOR, zorder=2, label="WM", s=40)
 
     ax.set_yticks(y)
-    ax.set_yticklabels(wide["Subregion"], fontsize=7)
-    ax.set_xlabel("LOA Width", fontsize=12)
-    ax.set_title(comp["label"], fontsize=12)
-    ax.legend()
+    ax.set_yticklabels(wide["Subregion"], fontsize=FONT["ytick"])
+    ax.set_xlabel("LOA Width", fontsize=FONT["xlabel"])
+    ax.set_title(comp["label"], fontsize=FONT["title"], fontweight="bold")
     ax.grid(axis="x", linestyle="--", alpha=0.4)
+    ax.set_xlim(x_lim)
+    ax.tick_params(axis="x", labelsize=FONT["xtick"])
+
+    ax.legend(
+        handles=legend_handles,
+        loc="lower right",
+        fontsize=FONT["legend"],
+        framealpha=0.7,
+    )
 
 plt.tight_layout()
-
-out_name = OUTPUT_DIR / f"{DATA_TYPE}_loa_GM_vs_WM.png"
-plt.savefig(out_name, dpi=150, bbox_inches="tight")
+plt.savefig(OUTPUT_DIR / f"{DATA_TYPE}_loa_GM_vs_WM.png", dpi=150, bbox_inches="tight")
 plt.show()
-print(f"Saved: {out_name}")
+print(f"Saved: {OUTPUT_DIR / f'{DATA_TYPE}_loa_GM_vs_WM.png'}")
