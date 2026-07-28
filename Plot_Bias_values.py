@@ -5,7 +5,6 @@ import matplotlib.patches as mpatches
 from pathlib import Path
 
 # ── File path ─────────────────────────────────────────────────────────────────
-EXCEL_PATH = "your_bias_data.xlsx"      # ← update this
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingBias.xlsx"       # ← update this
 OUTPUT_DIR = Path(".")
 
