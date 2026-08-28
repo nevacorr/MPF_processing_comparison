@@ -1,21 +1,26 @@
 """
-ICC Forest Plot — Desikan-Killiany Atlas, GM & WM
-Averaged across hemispheres, sorted by GM ICC (descending).
+ICC Consistency Forest Plot
 
-Inputs:
-    Excel spreadsheet with columns:
-        Region          : "GM", "WM", or "Subcortical"
-        Subregion       : DK atlas region name
-        Side            : "Left" or "Right"
+Uses only rows where Side == "Average"; Left and Right rows are ignored.
 
-        For each comparison (MPF_v_MPFreg, MPF_v_MPRAGE, MPFreg_v_MPRAGE):
-            ICC_C_<comparison>      : ICC consistency
-            ICC_C_lower_<comparison>: lower CI (consistency)
-            ICC_C_upper_<comparison>: upper CI (consistency)
-            ICC_A_<comparison>      : ICC absolute
-            ICC_A_lower_<comparison>: lower CI (absolute)
-            ICC_A_upper_<comparison>: upper CI (absolute)
+Combined figure layout:
+    A: cerebrum and lobe-level ROIs
+    B: cortical parcel ROIs
+    C: subcortical ROIs
 
+Required columns:
+    Region
+    Subregion
+    Side
+    ICC Consistency MPFvMPFreg
+    Lower CI Consistency MPFvMPFreg
+    Upper CI Consistency MPFvMPFreg
+    ICC Consistency MPFvMPRAGE
+    Lower CI Consistency MPFvMPRAGE
+    Upper CI Consistency MPFvMPRAGE
+    ICC Consistency MPFregvMPRAGE
+    Lower CI Consistency MPFregvMPRAGE
+    Upper CI Consistency MPFregvMPRAGE
 """
 
 import pandas as pd
@@ -24,350 +29,486 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
 
-# ── File path ─────────────────────────────────────────────────────────────────
-EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingICC.xlsx"       # ← update this
-OUTPUT_DIR = Path(".")
-SHEET_NAME = "MPF" # "Volume" or "MPF"
+# ── File paths and data settings ──────────────────────────────────────────────
+EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingICCWithAvg.xlsx"
+OUTPUT_DIR = Path("/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper figures")
+SHEET_NAME = "Volume"  # "Volume" or "MPF"
+SIDE_VALUE = "Average"
 
-# ── Column name map ───────────────────────────────────────────────────────────
-
+# ── Column names ──────────────────────────────────────────────────────────────
 COL = {
-    "region"    : "Region",
-    "subregion" : "Subregion",
-    "side"      : "Side",
+    "region": "Region",
+    "subregion": "Subregion",
+    "side": "Side",
 
-    # ── MPF vs MPFreg ──────────────────────────────────────────────────────
-    "icc_c_1"   : "ICC Consistency MPFvMPFreg",
-    "icc_c_lo_1": "Lower CI Consistency MPFvMPFreg",
-    "icc_c_hi_1": "Upper CI Consistency MPFvMPFreg",
-    "icc_a_1"   : "ICC Absolute MPFvMPFreg",
-    "icc_a_lo_1": "Lower CI Absolute MPFvMPFreg",
-    "icc_a_hi_1": "Upper CI Absolute MPFvMPFreg",
+    "icc_1": "ICC Consistency MPFvMPFreg",
+    "icc_lo_1": "Lower CI Consistency MPFvMPFreg",
+    "icc_hi_1": "Upper CI Consistency MPFvMPFreg",
 
-    # ── MPF vs MPRAGE ──────────────────────────────────────────────────────
-    "icc_c_2"   : "ICC Consistency MPFvMPRAGE",
-    "icc_c_lo_2": "Lower CI Consistency MPFvMPRAGE",
-    "icc_c_hi_2": "Upper CI Consistency MPFvMPRAGE",
-    "icc_a_2"   : "ICC Absolute MPFvMPRAGE",
-    "icc_a_lo_2": "Lower CI Absolute MPFvMPRAGE",
-    "icc_a_hi_2": "Upper CI Absolute MPFvMPRAGE",
+    "icc_2": "ICC Consistency MPFvMPRAGE",
+    "icc_lo_2": "Lower CI Consistency MPFvMPRAGE",
+    "icc_hi_2": "Upper CI Consistency MPFvMPRAGE",
 
-    # ── MPFreg vs MPRAGE ───────────────────────────────────────────────────
-    "icc_c_3"   : "ICC Consistency MPFregvMPRAGE",
-    "icc_c_lo_3": "Lower CI Consistency MPFregvMPRAGE",
-    "icc_c_hi_3": "Upper CI Consistency MPFregvMPRAGE",
-    "icc_a_3"   : "ICC Absolute MPFregvMPRAGE",
-    "icc_a_lo_3": "Lower CI Absolute MPFregvMPRAGE",
-    "icc_a_hi_3": "Upper CI Absolute MPFregvMPRAGE",
+    "icc_3": "ICC Consistency MPFregvMPRAGE",
+    "icc_lo_3": "Lower CI Consistency MPFregvMPRAGE",
+    "icc_hi_3": "Upper CI Consistency MPFregvMPRAGE",
 }
-
-# ── Plotting options ───────────────────────────────────────────────────────────
-ICC_TYPE        = "consistency"   # "consistency" or "absolute"
-REFERENCE_LINE  = 0.75
-WM_COLOR        = "#E07B39"       # orange
-GM_COLOR        = "#4C72B0"       # blue
-SUBCORTICAL_COLOR = "#7F7F7F"     # gray
-MARKER_SIZE     = 6
-LINEWIDTH       = 1.4
-DODGE           = 0.22            # vertical separation between GM and WM markers
-
-# ── Font sizes — adjust all in one place ──────────────────────────────────────
-FONT = {
-    "title"  : 15,
-    "xlabel" : 17,
-    "ylabel" : 17,
-    "xtick"  : 17,
-    "ytick"  : 17,
-    "legend" : 17,
-}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Load & prepare data
-# ─────────────────────────────────────────────────────────────────────────────
-df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
-
-# Filter to GM and WM only (exclude Subcortical for DK atlas plot)
-df = df[df[COL["region"]].isin(["GM", "WM"])].copy()
-
-# Exclude whole-brain "cerebrum" rows
-# df = df[~df[COL["subregion"]].str.lower().str.contains("cerebrum", na=False)]
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Average Left and Right hemispheres for each Subregion × Region
-# ─────────────────────────────────────────────────────────────────────────────
-icc_cols = [v for k, v in COL.items() if k not in ("region", "subregion", "side")]
-avg = (
-    df.groupby([COL["subregion"], COL["region"]])[icc_cols]
-    .mean()
-    .reset_index()
-)
-
-# ── Subcortical data (kept separate, averaged across hemispheres) ──
-df_sub = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
-df_sub = df_sub[df_sub[COL["region"]] == "Subcortical"].copy()
-avg_sub = (
-    df_sub.groupby([COL["subregion"], COL["region"]])[icc_cols]
-    .mean()
-    .reset_index()
-)
-# ─────────────────────────────────────────────────────────────────────────────
-# 2b. Summary statistics — ICC mean and range per tissue type
-# ─────────────────────────────────────────────────────────────────────────────
-def compute_icc_stats(df_in, region_label, icc_col):
-    vals = df_in[icc_col].dropna()
-    return {
-        "Region" : region_label,
-        "N"      : len(vals),
-        "Mean"   : round(vals.mean(), 4) if len(vals) > 0 else np.nan,
-        "Min"    : round(vals.min(),  4) if len(vals) > 0 else np.nan,
-        "Max"    : round(vals.max(),  4) if len(vals) > 0 else np.nan,
-    }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Determine which ICC columns to use based on ICC_TYPE
-# ─────────────────────────────────────────────────────────────────────────────
-PREFIX = "icc_c" if ICC_TYPE == "consistency" else "icc_a"
 
 COMPARISONS = {
-    "MPFreg vs MPF"   : (COL[f"{PREFIX}_1"], COL[f"{PREFIX}_lo_1"], COL[f"{PREFIX}_hi_1"]),
-    "MPRAGE vs MPF"   : (COL[f"{PREFIX}_2"], COL[f"{PREFIX}_lo_2"], COL[f"{PREFIX}_hi_2"]),
-    "MPRAGE vs MPFreg": (COL[f"{PREFIX}_3"], COL[f"{PREFIX}_lo_3"], COL[f"{PREFIX}_hi_3"]),
+    "MPFreg vs MPF": (COL["icc_1"], COL["icc_lo_1"], COL["icc_hi_1"]),
+    "MPRAGE vs MPF": (COL["icc_2"], COL["icc_lo_2"], COL["icc_hi_2"]),
+    "MPRAGE vs MPFreg": (COL["icc_3"], COL["icc_lo_3"], COL["icc_hi_3"]),
 }
 
+ICC_COLS = [
+    column
+    for key, column in COL.items()
+    if key not in ("region", "subregion", "side")
+]
+ICC_POINT_COLS = [columns[0] for columns in COMPARISONS.values()]
+ICC_LOWER_COLS = [columns[1] for columns in COMPARISONS.values()]
+ICC_UPPER_COLS = [columns[2] for columns in COMPARISONS.values()]
+
+# ── Plotting options ──────────────────────────────────────────────────────────
+REFERENCE_LINE = 0.75
+GM_COLOR = "#4C72B0"
+WM_COLOR = "#E07B39"
+SUBCORTICAL_COLOR = "#1A1A1A"
+MARKER_SIZE = 6
+LINEWIDTH = 1.4
+DODGE = 0.22
+YTICK_PAD = 8
+
+FONT = {
+    "title": 15,
+    "xlabel": 17,
+    "ylabel": 17,
+    "xtick": 17,
+    "ytick": 17,
+    "legend": 17,
+}
+
+# Desired panel-A order, from top to bottom.
+LOBE_TOP_TO_BOTTOM = [
+    "cerebrum",
+    "parietal",
+    "frontal",
+    "occipital",
+    "temporal",
+]
+LOBE_SET = set(LOBE_TOP_TO_BOTTOM)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Compute ONE fixed region sort order
-#    Sorted by average GM ICC across all three comparisons (ascending so
-#    highest ICC ends up at the top of the plot).
+# 1. Load and prepare the pre-averaged data
 # ─────────────────────────────────────────────────────────────────────────────
-gm_avg = avg[avg[COL["region"]] == "GM"].copy()
-wm_avg = avg[avg[COL["region"]] == "WM"].copy()
+df_raw = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
+df_raw.columns = df_raw.columns.str.strip()
 
-# Average the ICC point estimates across all three comparisons for GM
-gm_icc_cols = [cols[0] for cols in COMPARISONS.values()]   # just the point estimates
-gm_avg["_mean_icc"] = gm_avg[gm_icc_cols].mean(axis=1)
+df_raw[COL["region"]] = df_raw[COL["region"]].astype("string").str.strip()
+df_raw[COL["side"]] = df_raw[COL["side"]].astype("string").str.strip()
+df_raw[COL["subregion"]] = (
+    df_raw[COL["subregion"]]
+    .astype("string")
+    .str.strip()
+    .str.replace(r"(?i)^cerebrum.*$", "cerebrum", regex=True)
+)
 
-# Sort ascending so highest ICC appears at the TOP of the figure
-REGION_ORDER = gm_avg.sort_values("_mean_icc", ascending=True)[COL["subregion"]].tolist()
+# Ignore Left and Right completely.
+df_avg = df_raw[df_raw[COL["side"]].eq(SIDE_VALUE)].copy()
 
-# Append any WM-only regions not represented in GM (rare but possible)
-wm_only = [r for r in wm_avg[COL["subregion"]].tolist() if r not in REGION_ORDER]
-REGION_ORDER = wm_only + REGION_ORDER   # WM-only regions go to the bottom
+# GM/WM data only.
+avg = df_avg[df_avg[COL["region"]].isin(["GM", "WM"])][
+    [COL["subregion"], COL["region"]] + ICC_COLS
+].copy()
 
-# Force cerebrum to the top of the plot
-if "cerebrum" in REGION_ORDER:
-    REGION_ORDER.remove("cerebrum")
-    REGION_ORDER.append("cerebrum")
+# Separate cerebrum/lobe-level ROIs from individual cortical parcels.
+is_lobe = avg[COL["subregion"]].str.lower().isin(LOBE_SET)
+avg_lobe = avg[is_lobe].copy()
+avg_parcel = avg[~is_lobe].copy()
 
-N_REGIONS  = len(REGION_ORDER)
-Y_POS      = {r: i for i, r in enumerate(REGION_ORDER)}
+# Subcortical data only.
+avg_sub = df_avg[df_avg[COL["region"]].eq("Subcortical")][
+    [COL["subregion"], COL["region"]] + ICC_COLS
+].copy()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Core draw function — draws one comparison panel onto a given Axes object
+# 2. Fixed region orders shared across all three comparison columns
 # ─────────────────────────────────────────────────────────────────────────────
-def draw_panel(ax, avg_df, icc_col, lo_col, hi_col,
-               show_yticks=True):
-    """
-    Draw GM and WM ICC estimates with CIs onto ax.
-    Uses the globally fixed REGION_ORDER and Y_POS.
+def compute_gm_wm_order(avg_subset):
+    """Sort regions by mean GM consistency ICC, with highest values at top."""
+    gm = avg_subset[avg_subset[COL["region"]].eq("GM")].copy()
+    wm = avg_subset[avg_subset[COL["region"]].eq("WM")].copy()
 
-    show_yticks : if True, render region labels on the y-axis (left panel only)
-    """
-    gm = avg_df[avg_df[COL["region"]] == "GM"]
-    wm = avg_df[avg_df[COL["region"]] == "WM"]
+    gm["_mean_icc"] = gm[ICC_POINT_COLS].mean(axis=1)
+    order = gm.sort_values("_mean_icc", ascending=True)[COL["subregion"]].tolist()
 
-    # ── Plot GM ──
+    wm_only = [
+        region
+        for region in wm[COL["subregion"]].tolist()
+        if region not in order
+    ]
+    return wm_only + order
+
+
+# Matplotlib displays the final item at the top, so reverse the desired
+# top-to-bottom sequence for the internal bottom-to-top y-axis order.
+existing_lobes = set(avg_lobe[COL["subregion"]].str.lower())
+LOBE_REGION_ORDER = [
+    label
+    for label in reversed(LOBE_TOP_TO_BOTTOM)
+    if label in existing_lobes
+]
+
+# Preserve the actual spelling used in the spreadsheet when possible.
+lobe_display_lookup = {
+    str(label).lower(): str(label)
+    for label in avg_lobe[COL["subregion"]].dropna().unique()
+}
+LOBE_REGION_ORDER = [lobe_display_lookup.get(label, label) for label in LOBE_REGION_ORDER]
+
+PARCEL_REGION_ORDER = compute_gm_wm_order(avg_parcel)
+
+avg_sub_sorted = avg_sub.copy()
+avg_sub_sorted["_mean_icc"] = avg_sub_sorted[ICC_POINT_COLS].mean(axis=1)
+SUB_REGION_ORDER = avg_sub_sorted.sort_values(
+    "_mean_icc", ascending=True
+)[COL["subregion"]].tolist()
+
+N_LOBE_REGIONS = len(LOBE_REGION_ORDER)
+N_PARCEL_REGIONS = len(PARCEL_REGION_ORDER)
+N_SUB_REGIONS = len(SUB_REGION_ORDER)
+
+LOBE_Y_POS = {region: index for index, region in enumerate(LOBE_REGION_ORDER)}
+PARCEL_Y_POS = {region: index for index, region in enumerate(PARCEL_REGION_ORDER)}
+SUB_Y_POS = {region: index for index, region in enumerate(SUB_REGION_ORDER)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Shared x-axis limits
+# ─────────────────────────────────────────────────────────────────────────────
+all_plot_data = pd.concat([avg_lobe, avg_parcel, avg_sub], ignore_index=True)
+global_min = min(
+    all_plot_data[ICC_LOWER_COLS].min().min(),
+    REFERENCE_LINE,
+)
+global_max = max(
+    all_plot_data[ICC_UPPER_COLS].max().max(),
+    REFERENCE_LINE,
+)
+
+x_range = global_max - global_min
+padding = x_range * 0.05 if x_range > 0 else 0.05
+X_LIM = (global_min - padding, global_max + padding)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Drawing functions
+# ─────────────────────────────────────────────────────────────────────────────
+def format_axis(ax, region_order, show_yticks):
+    n_regions = len(region_order)
+
+    ax.axvline(
+        REFERENCE_LINE,
+        color="gray",
+        linestyle="--",
+        lw=1.2,
+        zorder=1,
+    )
+
+    for index in range(n_regions):
+        if index % 2 == 0:
+            ax.axhspan(index - 0.5, index + 0.5, color="whitesmoke", zorder=0)
+
+    ax.set_yticks(range(n_regions))
+    if show_yticks:
+        ax.set_yticklabels(region_order, fontsize=FONT["ytick"])
+    else:
+        ax.set_yticklabels([])
+
+    ax.set_ylim(-0.5, n_regions - 0.5)
+    ax.set_xlim(X_LIM)
+    ax.tick_params(axis="x", labelsize=FONT["xtick"])
+    ax.tick_params(axis="y", pad=YTICK_PAD)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def draw_gm_wm_panel(
+    ax,
+    data,
+    icc_col,
+    lo_col,
+    hi_col,
+    region_order,
+    y_pos,
+    show_yticks=True,
+):
+    gm = data[data[COL["region"]].eq("GM")]
+    wm = data[data[COL["region"]].eq("WM")]
+
     for _, row in gm.iterrows():
-        r   = row[COL["subregion"]]
-        y   = Y_POS[r] + DODGE
-        icc = row[icc_col]
-        lo  = row[lo_col]
-        hi  = row[hi_col]
-        ax.plot([lo, hi], [y, y], color=GM_COLOR, lw=LINEWIDTH, zorder=2)
-        ax.plot(icc, y, "o", color=GM_COLOR, ms=MARKER_SIZE, zorder=3)
+        region = row[COL["subregion"]]
+        if region not in y_pos:
+            continue
+        y = y_pos[region] + DODGE
+        ax.plot(
+            [row[lo_col], row[hi_col]],
+            [y, y],
+            color=GM_COLOR,
+            lw=LINEWIDTH,
+            zorder=2,
+        )
+        ax.plot(
+            row[icc_col], y, "o",
+            color=GM_COLOR,
+            ms=MARKER_SIZE,
+            zorder=3,
+        )
 
-    # ── Plot WM ──
     for _, row in wm.iterrows():
-        r   = row[COL["subregion"]]
-        y   = Y_POS[r] - DODGE
-        icc = row[icc_col]
-        lo  = row[lo_col]
-        hi  = row[hi_col]
-        ax.plot([lo, hi], [y, y], color=WM_COLOR, lw=LINEWIDTH, zorder=2)
-        ax.plot(icc, y, "s", color=WM_COLOR, ms=MARKER_SIZE, zorder=3)
+        region = row[COL["subregion"]]
+        if region not in y_pos:
+            continue
+        y = y_pos[region] - DODGE
+        ax.plot(
+            [row[lo_col], row[hi_col]],
+            [y, y],
+            color=WM_COLOR,
+            lw=LINEWIDTH,
+            zorder=2,
+        )
+        ax.plot(
+            row[icc_col], y, "s",
+            color=WM_COLOR,
+            ms=MARKER_SIZE,
+            zorder=3,
+        )
 
-    # ── Reference line ──
-    ax.axvline(REFERENCE_LINE, color="gray", linestyle="--", lw=1.2, zorder=1)
-
-    # ── Alternating row shading ──
-    for i in range(N_REGIONS):
-        if i % 2 == 0:
-            ax.axhspan(i - 0.5, i + 0.5, color="whitesmoke", zorder=0)
-
-    # ── Y-axis ──
-    ax.set_yticks(range(N_REGIONS))
-    if show_yticks:
-        ax.set_yticklabels(REGION_ORDER, fontsize=FONT["ytick"])
-    else:
-        ax.set_yticklabels([])
-
-    ax.set_ylim(-0.5, N_REGIONS - 0.5)
-
-    # ── X-axis ──
-    ax.set_xlim(-0.05, 1.05)
-    ax.tick_params(axis="x", labelsize=FONT["xtick"])
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-def draw_subcortical_panel(ax, sub_df, icc_col, lo_col, hi_col,
-                           show_yticks=True):
-    """Draw subcortical ICC estimates — single tissue type, gray markers."""
-    # Sort regions by average ICC across comparisons
-    sub_icc_cols = [cols[0] for cols in COMPARISONS.values()]
-    sub_sorted = sub_df.copy()
-    sub_sorted["_mean_icc"] = sub_sorted[sub_icc_cols].mean(axis=1)
-    sub_region_order = sub_sorted.sort_values("_mean_icc", ascending=True)[COL["subregion"]].tolist()
-    n_sub = len(sub_region_order)
-    y_pos_sub = {r: i for i, r in enumerate(sub_region_order)}
-
-    for _, row in sub_df.iterrows():
-        r   = row[COL["subregion"]]
-        y   = y_pos_sub[r]
-        icc = row[icc_col]
-        lo  = row[lo_col]
-        hi  = row[hi_col]
-        ax.plot([lo, hi], [y, y], color=SUBCORTICAL_COLOR, lw=LINEWIDTH, zorder=2)
-        ax.plot(icc, y, "D", color=SUBCORTICAL_COLOR, ms=MARKER_SIZE, zorder=3)
-
-    ax.axvline(REFERENCE_LINE, color="gray", linestyle="--", lw=1.2, zorder=1)
-
-    for i in range(n_sub):
-        if i % 2 == 0:
-            ax.axhspan(i - 0.5, i + 0.5, color="whitesmoke", zorder=0)
-
-    ax.set_yticks(range(n_sub))
-    if show_yticks:
-        ax.set_yticklabels([r.lower() for r in sub_region_order], fontsize=FONT["ytick"])
-    else:
-        ax.set_yticklabels([])
-
-    ax.set_ylim(-0.5, n_sub - 0.5)
-    ax.set_xlim(-0.05, 1.05)
-    ax.tick_params(axis="x", labelsize=FONT["xtick"])
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Individual plots (one per comparison)
-# ─────────────────────────────────────────────────────────────────────────────
-def make_single_plot(avg_df, icc_col, lo_col, hi_col, title, outfile):
-    fig, ax = plt.subplots(figsize=(10, max(6, N_REGIONS * 0.38)))
-    draw_panel(ax, avg_df, icc_col, lo_col, hi_col, show_yticks=True)
-
-    ax.set_xlabel(f"{SHEET_NAME} ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
-    ax.set_ylabel("DK Atlas Region", fontsize=FONT["ylabel"])
-    ax.set_title(title, fontsize=FONT["title"], fontweight="bold", pad=10)
-
-    # Legend
-    gm_patch = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
-    wm_patch = mpatches.Patch(color=WM_COLOR, label="White Matter")
-    ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
-                           lw=1.2, label=f"ICC = {REFERENCE_LINE}")
-    ax.legend(handles=[gm_patch, wm_patch, ref_line],
-              loc="lower right", fontsize=FONT["legend"], framealpha=0.9)
-
-    plt.tight_layout()
-    fig.savefig(outfile, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {outfile}")
+    format_axis(ax, region_order, show_yticks)
 
 
-for comp_name, (icc_col, lo_col, hi_col) in COMPARISONS.items():
-    safe_name = comp_name.replace(" ", "_").replace("/", "")
-    outfile   = OUTPUT_DIR / f"icc_forest_{safe_name}_{ICC_TYPE}.png"
-    title     = (f"ICC ({ICC_TYPE.capitalize()}) — {comp_name}\n"
-                 f"DK Atlas Regions, Hemispheres Averaged")
-    make_single_plot(avg, icc_col, lo_col, hi_col, title, outfile)
+def draw_subcortical_panel(
+    ax,
+    data,
+    icc_col,
+    lo_col,
+    hi_col,
+    show_yticks=True,
+):
+    for _, row in data.iterrows():
+        region = row[COL["subregion"]]
+        if region not in SUB_Y_POS:
+            continue
+        y = SUB_Y_POS[region]
+        ax.plot(
+            [row[lo_col], row[hi_col]],
+            [y, y],
+            color=SUBCORTICAL_COLOR,
+            lw=LINEWIDTH,
+            zorder=2,
+        )
+        ax.plot(
+            row[icc_col], y, "D",
+            color=SUBCORTICAL_COLOR,
+            ms=MARKER_SIZE,
+            zorder=3,
+        )
+
+    labels = [str(region).lower() for region in SUB_REGION_ORDER]
+    format_axis(ax, labels, show_yticks)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Combined figure — cortical (GM/WM) on top, subcortical below,
-#    all three comparisons side by side
+# 5. Optional individual figure for each comparison
+# ─────────────────────────────────────────────────────────────────────────────
+# def make_single_plot(icc_col, lo_col, hi_col, title, outfile):
+#     height_ratios = [N_LOBE_REGIONS, N_PARCEL_REGIONS, N_SUB_REGIONS]
+#     row_unit = 0.38
+#     fig_height = (
+#         max(3, N_LOBE_REGIONS * row_unit)
+#         + max(8, N_PARCEL_REGIONS * row_unit)
+#         + max(6, N_SUB_REGIONS * row_unit)
+#     )
 #
-#    • All panels share the SAME fixed region order within their row
-#      (top row: average GM ICC; bottom row: average subcortical ICC)
-#    • Y-axis region labels appear on the LEFT column only
-#    • Row labels "A" (cortical) / "B" (subcortical) sit outside the
-#      plot area, above and left of the y-axis labels
-#    • Shared legend above the panels
-# ─────────────────────────────────────────────────────────────────────────────
-comp_items  = list(COMPARISONS.items())       # [(name, (icc, lo, hi)), ...]
-n_panels    = len(comp_items)
+#     fig, axes = plt.subplots(
+#         3,
+#         1,
+#         figsize=(10, fig_height),
+#         gridspec_kw={"height_ratios": height_ratios, "hspace": 0.2},
+#     )
+#
+#     draw_gm_wm_panel(
+#         axes[0], avg_lobe, icc_col, lo_col, hi_col,
+#         LOBE_REGION_ORDER, LOBE_Y_POS,
+#     )
+#     axes[0].set_title(title, fontsize=FONT["title"], fontweight="bold", pad=10)
+#     axes[0].tick_params(axis="x", labelbottom=False)
+#     axes[0].set_ylabel("Region", fontsize=FONT["ylabel"])
+#
+#     draw_gm_wm_panel(
+#         axes[1], avg_parcel, icc_col, lo_col, hi_col,
+#         PARCEL_REGION_ORDER, PARCEL_Y_POS,
+#     )
+#     axes[1].tick_params(axis="x", labelbottom=False)
+#     axes[1].set_ylabel("Region", fontsize=FONT["ylabel"])
+#
+#     draw_subcortical_panel(axes[2], avg_sub, icc_col, lo_col, hi_col)
+#     axes[2].set_xlabel(f"{SHEET_NAME} Consistency ICC", fontsize=FONT["xlabel"])
+#     axes[2].set_ylabel("Region", fontsize=FONT["ylabel"])
+#
+#     gm_patch = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
+#     wm_patch = mpatches.Patch(color=WM_COLOR, label="White Matter")
+#     sub_patch = mpatches.Patch(color=SUBCORTICAL_COLOR, label="Subcortical")
+#     ref_line = plt.Line2D(
+#         [0], [0],
+#         color="gray",
+#         linestyle="--",
+#         lw=1.2,
+#         label=f"ICC = {REFERENCE_LINE}",
+#     )
+#
+#     fig.legend(
+#         handles=[gm_patch, wm_patch, sub_patch, ref_line],
+#         loc="upper center",
+#         ncol=4,
+#         fontsize=FONT["legend"],
+#         frameon=False,
+#         bbox_to_anchor=(0.5, 0.985),
+#     )
+#
+#     fig.align_ylabels(axes)
+#     fig.subplots_adjust(left=0.32, right=0.97, bottom=0.06, top=0.93)
+#     fig.savefig(outfile, dpi=150, bbox_inches="tight")
+#     plt.close(fig)
+#     print(f"Saved: {outfile}")
+#
+#
+# for comparison_name, (icc_col, lo_col, hi_col) in COMPARISONS.items():
+#     safe_name = comparison_name.replace(" ", "_").replace("/", "")
+#     outfile = OUTPUT_DIR / f"icc_forest_{safe_name}_consistency_{SHEET_NAME}.png"
+#     make_single_plot(
+#         icc_col,
+#         lo_col,
+#         hi_col,
+#         f"Consistency ICC — {comparison_name}",
+#         outfile,
+#     )
 
-n_sub_regions = avg_sub[COL["subregion"]].nunique()
-height_ratios = [N_REGIONS, n_sub_regions]
-row_unit      = 0.38                                  # inches per region row
-fig_width     = 8 * n_panels                          # ~8 inches per panel
-fig_height    = max(8, N_REGIONS * row_unit) + max(6, n_sub_regions * row_unit)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Combined figure: A = lobes, B = parcels, C = subcortical
+# ─────────────────────────────────────────────────────────────────────────────
+comparison_items = list(COMPARISONS.items())
+n_panels = len(comparison_items)
+
+height_ratios = [N_LOBE_REGIONS, N_PARCEL_REGIONS, N_SUB_REGIONS]
+row_unit = 0.38
+fig_width = 8 * n_panels
+fig_height = (
+    max(3, N_LOBE_REGIONS * row_unit)
+    + max(8, N_PARCEL_REGIONS * row_unit)
+    + max(6, N_SUB_REGIONS * row_unit)
+)
 
 fig, axes = plt.subplots(
-    2, n_panels,
+    3,
+    n_panels,
     figsize=(fig_width, fig_height),
-    gridspec_kw={"height_ratios": height_ratios, "hspace": 0.15},
-    sharey=False,          # sharey=False so we control labels manually
+    gridspec_kw={"height_ratios": height_ratios, "hspace": 0.2},
+    sharey=False,
 )
 
-# Guarantee axes is always 2D (n_panels could be 1)
-axes = np.atleast_2d(axes)
-if axes.shape[0] != 2:
-    axes = axes.T
+axes = np.asarray(axes)
+if axes.ndim == 1:
+    axes = axes.reshape(3, 1)
 
-PANEL_LABEL_FONT = FONT["title"] + 8
+panel_label_font = FONT["title"] + 8
 
-for idx, (comp_name, (icc_col, lo_col, hi_col)) in enumerate(comp_items):
-    ax_top      = axes[0, idx]
-    ax_bottom   = axes[1, idx]
-    show_yticks = (idx == 0)              # labels only on leftmost column
+for column_index, (
+    comparison_name,
+    (icc_col, lo_col, hi_col),
+) in enumerate(comparison_items):
+    show_yticks = column_index == 0
 
-    # ── Top row: cortical GM/WM ──
-    draw_panel(ax_top, avg, icc_col, lo_col, hi_col, show_yticks=show_yticks)
-    ax_top.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-    ax_top.set_xlabel("")
-    ax_top.tick_params(axis="x", labelbottom=False)
+    ax_lobe = axes[0, column_index]
+    ax_parcel = axes[1, column_index]
+    ax_sub = axes[2, column_index]
+
+    draw_gm_wm_panel(
+        ax_lobe,
+        avg_lobe,
+        icc_col,
+        lo_col,
+        hi_col,
+        LOBE_REGION_ORDER,
+        LOBE_Y_POS,
+        show_yticks,
+    )
+    ax_lobe.set_title(
+        comparison_name,
+        fontsize=FONT["title"],
+        fontweight="bold",
+        pad=10,
+    )
+    ax_lobe.tick_params(axis="x", labelbottom=False)
     if show_yticks:
-        ax_top.set_ylabel("Region", fontsize=FONT["ylabel"])
+        ax_lobe.set_ylabel("Region", fontsize=FONT["ylabel"])
 
-    # ── Bottom row: subcortical ──
-    draw_subcortical_panel(ax_bottom, avg_sub, icc_col, lo_col, hi_col,
-                           show_yticks=show_yticks)
-    ax_bottom.set_title(comp_name, fontsize=FONT["title"], fontweight="bold", pad=10)
-    ax_bottom.set_xlabel(f"{SHEET_NAME} ICC ({ICC_TYPE.capitalize()})", fontsize=FONT["xlabel"])
+    draw_gm_wm_panel(
+        ax_parcel,
+        avg_parcel,
+        icc_col,
+        lo_col,
+        hi_col,
+        PARCEL_REGION_ORDER,
+        PARCEL_Y_POS,
+        show_yticks,
+    )
+    ax_parcel.tick_params(axis="x", labelbottom=False)
     if show_yticks:
-        ax_bottom.set_ylabel("Region", fontsize=FONT["ylabel"])
+        ax_parcel.set_ylabel("Region", fontsize=FONT["ylabel"])
 
-# ── Row labels "A" / "B" — outside the plot area, above and left of the
-#    y-axis region labels. Tune -0.25/1.08 if labels overlap the region
-#    names (longer names need a more negative x).
-axes[0, 0].text(
-    -0.45, 1.0, "A",
-    transform=axes[0, 0].transAxes,
-    fontsize=PANEL_LABEL_FONT, fontweight="bold",
-    ha="left", va="bottom", zorder=10, clip_on=False,
-)
-axes[1, 0].text(
-    -0.45, 1.0, "B",
-    transform=axes[1, 0].transAxes,
-    fontsize=PANEL_LABEL_FONT, fontweight="bold",
-    ha="left", va="bottom", zorder=10, clip_on=False,
-)
+    draw_subcortical_panel(
+        ax_sub,
+        avg_sub,
+        icc_col,
+        lo_col,
+        hi_col,
+        show_yticks,
+    )
+    ax_sub.set_xlabel(
+        f"{SHEET_NAME} Consistency ICC",
+        fontsize=FONT["xlabel"],
+    )
+    if show_yticks:
+        ax_sub.set_ylabel("Region", fontsize=FONT["ylabel"])
 
-# ── Shared legend (cortical + subcortical) ──
-gm_patch  = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
-wm_patch  = mpatches.Patch(color=WM_COLOR, label="White Matter")
+for row_index, panel_label in enumerate(["A", "B", "C"]):
+    axes[row_index, 0].text(
+        -0.45,
+        1.0,
+        panel_label,
+        transform=axes[row_index, 0].transAxes,
+        fontsize=panel_label_font,
+        fontweight="bold",
+        ha="left",
+        va="bottom",
+        zorder=10,
+        clip_on=False,
+    )
+
+gm_patch = mpatches.Patch(color=GM_COLOR, label="Gray Matter")
+wm_patch = mpatches.Patch(color=WM_COLOR, label="White Matter")
 sub_patch = mpatches.Patch(color=SUBCORTICAL_COLOR, label="Subcortical")
-ref_line  = plt.Line2D([0], [0], color="gray", linestyle="--",
-                       lw=1.2, label=f"ICC = {REFERENCE_LINE}")
+ref_line = plt.Line2D(
+    [0], [0],
+    color="gray",
+    linestyle="--",
+    lw=1.2,
+    label=f"ICC = {REFERENCE_LINE}",
+)
 
 fig.legend(
     handles=[gm_patch, wm_patch, sub_patch, ref_line],
@@ -375,51 +516,72 @@ fig.legend(
     ncol=4,
     fontsize=FONT["legend"],
     frameon=False,
-    bbox_to_anchor=(0.45, 0.94),
+    bbox_to_anchor=(0.5, 0.955),
 )
 
 fig.suptitle(
-    f"ICC ({ICC_TYPE.capitalize()}) — All Comparisons - {SHEET_NAME}\nDK Atlas + Subcortical, Hemispheres Averaged",
+    f"Consistency ICC — All Comparisons — {SHEET_NAME}\n"
+    "Cerebrum/Lobes + DK Parcels + Subcortical, Average Rows",
     fontsize=FONT["title"] + 1,
     fontweight="bold",
-    y=1.06,
+    y=0.995,
 )
 
-plt.tight_layout(rect=[0, 0, 1, 0.94])
-combined_out = OUTPUT_DIR / f"icc_forest_combined_{ICC_TYPE}_{SHEET_NAME}.png"
+fig.align_ylabels(axes[:, 0])
+fig.subplots_adjust(left=0.17, right=0.98, bottom=0.04, top=0.91)
+
+combined_out = OUTPUT_DIR / f"icc_forest_combined_consistency_{SHEET_NAME}.png"
 fig.savefig(combined_out, dpi=300, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved: {combined_out}")
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Print and save ICC summary statistics
+# 7. Print and save summary statistics
 # ─────────────────────────────────────────────────────────────────────────────
+def compute_icc_stats(data, region_label, icc_col):
+    values = data[icc_col].dropna()
+    return {
+        "Region": region_label,
+        "N": len(values),
+        "Mean": round(values.mean(), 4) if len(values) else np.nan,
+        "Min": round(values.min(), 4) if len(values) else np.nan,
+        "Max": round(values.max(), 4) if len(values) else np.nan,
+    }
+
+
 summary_rows = []
 
-for comp_name, (icc_col, lo_col, hi_col) in COMPARISONS.items():
+for comparison_name, (icc_col, lo_col, hi_col) in COMPARISONS.items():
+    gm_parcels = avg_parcel[avg_parcel[COL["region"]].eq("GM")]
+    wm_parcels = avg_parcel[avg_parcel[COL["region"]].eq("WM")]
+    gm_lobes = avg_lobe[avg_lobe[COL["region"]].eq("GM")]
+    wm_lobes = avg_lobe[avg_lobe[COL["region"]].eq("WM")]
 
-    # GM
-    gm_data = avg[avg[COL["region"]] == "GM"]
-    row = compute_icc_stats(gm_data, f"{comp_name} — GM", icc_col)
-    row["Comparison"] = comp_name
-    summary_rows.append(row)
+    categories = [
+        ("GM parcels", gm_parcels),
+        ("WM parcels", wm_parcels),
+        ("GM cerebrum/lobes", gm_lobes),
+        ("WM cerebrum/lobes", wm_lobes),
+        ("Subcortical", avg_sub),
+    ]
 
-    # WM
-    wm_data = avg[avg[COL["region"]] == "WM"]
-    row = compute_icc_stats(wm_data, f"{comp_name} — WM", icc_col)
-    row["Comparison"] = comp_name
-    summary_rows.append(row)
+    for category_name, category_data in categories:
+        row = compute_icc_stats(
+            category_data,
+            f"{comparison_name} — {category_name}",
+            icc_col,
+        )
+        row["Comparison"] = comparison_name
+        summary_rows.append(row)
 
-    # Subcortical
-    row = compute_icc_stats(avg_sub, f"{comp_name} — Subcortical", icc_col)
-    row["Comparison"] = comp_name
-    summary_rows.append(row)
+summary_df = pd.DataFrame(summary_rows)[
+    ["Comparison", "Region", "N", "Mean", "Min", "Max"]
+]
 
-summary_df = pd.DataFrame(summary_rows)[["Comparison", "Region", "N", "Mean", "Min", "Max"]]
-
-print("\n── ICC Summary Statistics ──")
+print("\n── ICC Consistency Summary Statistics ──")
 print(summary_df.to_string(index=False))
 
-stats_out = OUTPUT_DIR / f"icc_summary_stats_{ICC_TYPE}_{SHEET_NAME}.csv"
+stats_out = OUTPUT_DIR / f"icc_summary_stats_consistency_{SHEET_NAME}.csv"
 summary_df.to_csv(stats_out, index=False)
 print(f"\nSaved: {stats_out}")
