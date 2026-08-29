@@ -4,10 +4,14 @@ import numpy as np
 from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/TablesForPlottingLOA.xlsx"
-OUTPUT_DIR = Path(".")
-DATA_TYPE  = "MPF"    # "Volume" or "MPF" — also controls which sheet is read
-CEREBRUM_LABEL = "cerebrum"  # exact name of the cerebrum subregion in your data
+EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingLOAWithAvg.xlsx"
+OUTPUT_DIR = Path("/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper figures")
+
+DATA_TYPE  = "MPF"
+SIDE_COLUMN = "Side"
+AVERAGE_SIDE_LABEL = "Average"
+
+PANEL_A_SUBREGIONS = ["cerebrum", "frontal", "parietal", "temporal", "occipital"]
 
 GM_COLOR = "#4C72B0"    # blue
 WM_COLOR = "#E07B39"    # orange
@@ -19,27 +23,9 @@ FONT = {
     "xtick"  : 17,
     "ytick"  : 11,
     "legend" : 17,
+    "panel"  : 17,
 }
 
-# ── 1. Load data ──────────────────────────────────────────────────────────────
-df = pd.read_excel(EXCEL_PATH, sheet_name=DATA_TYPE)
-
-# ── 2. Tidy column names and normalize Region values ─────────────────────────
-df.columns = df.columns.str.strip()
-df["Region"] = df["Region"].str.strip().str.upper()
-
-# ── 3. Filter: keep only GM and WM ───────────────────────────────────────────
-df = df[df["Region"].isin(["GM", "WM"])].copy()
-
-# ── 4. Clean Subregion: strip embedded tissue suffixes (_gm, _wm) ─────────────
-df["Subregion"] = (
-    df["Subregion"]
-    .str.strip()
-    .str.replace(r"_(gm|wm)$", "", case=False, regex=True)
-    .str.strip()
-)
-
-# ── 5. Define the three comparisons ──────────────────────────────────────────
 comparisons = [
     {
         "label": "MPFreg vs MPF",
@@ -58,84 +44,185 @@ comparisons = [
     },
 ]
 
-# ── 6. Compute a consistent subregion order from the first comparison ─────────
-first = comparisons[0]
-df["LOA_width"] = df[first["upper"]] - df[first["lower"]]
-df_avg_order = (
-    df.groupby(["Region", "Subregion"], as_index=False)["LOA_width"].mean()
+# ── Load and clean data ───────────────────────────────────────────────────
+df = pd.read_excel(EXCEL_PATH, sheet_name=f"{DATA_TYPE}abs")
+df.columns = df.columns.str.strip()
+
+# Use only the supplied Average rows; Left and Right are excluded.
+df = df[df[SIDE_COLUMN] == AVERAGE_SIDE_LABEL].copy()
+df = df[df["Region"].isin(["GM", "WM"])].copy()
+
+# Remove the lowercase tissue suffixes from the subregion names.
+df["Subregion"] = df["Subregion"].str.replace(
+    r"_(gm|wm)$", "", regex=True
 )
-wide_order = df_avg_order.pivot(index="Subregion", columns="Region", values="LOA_width").reset_index()
-wide_order.columns.name = None
-wide_order = wide_order.dropna(subset=["GM", "WM"])
-wide_order_sorted = wide_order.sort_values("GM").reset_index(drop=True)
-subregion_order = wide_order_sorted["Subregion"].tolist()
 
-# ── Move Cerebrum to the end so it appears at the top of the y-axis ──────────
-if CEREBRUM_LABEL in subregion_order:
-    subregion_order.remove(CEREBRUM_LABEL)
-    subregion_order.append(CEREBRUM_LABEL)
-
-# ── 7. Compute global x-axis limits from AVERAGED values (same as plotted) ───
-all_widths = []
-for comp in comparisons:
-    df["LOA_width"] = df[comp["upper"]] - df[comp["lower"]]
-    df_avg = df.groupby(["Region", "Subregion"], as_index=False)["LOA_width"].mean()
-    all_widths.extend(df_avg["LOA_width"].dropna().tolist())
-x_min = min(all_widths)
-x_max = max(all_widths)
-x_pad = (x_max - x_min) * 0.05
-x_lim = (x_min - x_pad, x_max + x_pad)
-
-# ── 8. Build figure with one panel per comparison ─────────────────────────────
-fig, axes = plt.subplots(1, 3, figsize=(20, 8))
-fig.suptitle(f"[{DATA_TYPE}]  LOA Width — GM vs WM", fontsize=FONT["title"], fontweight="bold")
-
-legend_handles = [
-    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=GM_COLOR, markersize=8, label="GM"),
-    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=WM_COLOR, markersize=8, label="WM"),
-]
-
-for ax, comp in zip(axes, comparisons):
-    df["LOA_width"] = df[comp["upper"]] - df[comp["lower"]]
-
-    # Average left and right hemispheres per subregion per tissue type
-    df_avg = (
-        df.groupby(["Region", "Subregion"], as_index=False)["LOA_width"].mean()
+def make_wide(data, comparison):
+    """Calculate LOA width and pivot without averaging rows."""
+    values = data[["Region", "Subregion"]].copy()
+    values["LOA_width"] = (
+        data[comparison["upper"]] - data[comparison["lower"]]
     )
 
-    # Pivot to wide: one row per subregion, columns = GM / WM
-    wide = df_avg.pivot(index="Subregion", columns="Region", values="LOA_width").reset_index()
+    wide = values.pivot(
+        index="Subregion", columns="Region", values="LOA_width"
+    ).reset_index()
     wide.columns.name = None
-    wide = wide.dropna(subset=["GM", "WM"])
+    return wide.dropna(subset=["GM", "WM"]).copy()
 
-    # Apply consistent ordering (Cerebrum at top)
-    wide["Subregion"] = pd.Categorical(wide["Subregion"], categories=subregion_order, ordered=True)
+# ── Establish consistent ordering from the first comparison ──────────────────
+first_wide = make_wide(df, comparisons[0])
+first_wide["mean_width"] = first_wide[["GM", "WM"]].mean(axis=1)
+
+panel_a_order = sorted(
+    PANEL_A_SUBREGIONS,
+    key=lambda name: first_wide.loc[
+        first_wide["Subregion"] == name, "mean_width"
+    ].iloc[0],
+)
+
+# Put cerebrum at the top of panel A. The final item is displayed at the top.
+panel_a_order.remove("cerebrum")
+panel_a_order.append("cerebrum")
+
+panel_b_order = (
+    first_wide.loc[
+        ~first_wide["Subregion"].isin(PANEL_A_SUBREGIONS)
+    ]
+    .sort_values("GM")["Subregion"]
+    .tolist()
+)
+
+# ── Global x-axis limits from the exact Average values being plotted ──────────
+all_widths = []
+for comp in comparisons:
+    wide = make_wide(df, comp)
+    all_widths.extend(wide[["GM", "WM"]].to_numpy().ravel())
+
+all_widths = np.asarray(all_widths, dtype=float)
+x_min, x_max = all_widths.min(), all_widths.max()
+x_range = x_max - x_min
+x_pad = x_range * 0.05 if x_range > 0 else 0.01
+x_lim = (x_min - x_pad, x_max + x_pad)
+
+# ── Composite figure: panel A on top and panel B below ────────────────────────
+height_ratios = [max(len(panel_a_order), 2), max(len(panel_b_order), 2)]
+fig_height = max(10, 0.38 * sum(height_ratios) + 3)
+fig, axes = plt.subplots(
+    2,
+    3,
+    figsize=(20, fig_height),
+    gridspec_kw={"height_ratios": height_ratios},
+    sharex=True,
+)
+
+fig.suptitle(
+    f"[{DATA_TYPE}] LOA Width — GM vs WM",
+    fontsize=FONT["title"],
+    fontweight="bold",
+    y=0.995,
+)
+
+legend_handles = [
+    plt.Line2D(
+        [0], [0], marker="o", linestyle="none", color=GM_COLOR,
+        markersize=8, label="GM"
+    ),
+    plt.Line2D(
+        [0], [0], marker="o", linestyle="none", color=WM_COLOR,
+        markersize=8, label="WM"
+    ),
+]
+
+legend = fig.legend(
+    handles=legend_handles,
+    loc="center right",
+    bbox_to_anchor=(0.985, 0.95),
+    bbox_transform=fig.transFigure,
+    ncol=2,
+    fontsize=FONT["legend"],
+    frameon=True,
+)
+
+legend.get_frame().set_edgecolor("gray")
+legend.get_frame().set_linewidth(0.8)
+legend.get_frame().set_facecolor("white")
+legend.get_frame().set_alpha(1)
+
+def draw_panel(ax, wide, order, comparison_title=None, show_legend=False):
+    wide = wide[wide["Subregion"].isin(order)].copy()
+    wide["Subregion"] = pd.Categorical(
+        wide["Subregion"], categories=order, ordered=True
+    )
     wide = wide.sort_values("Subregion").reset_index(drop=True)
-
     y = np.arange(len(wide))
 
     for i, row in wide.iterrows():
-        ax.plot([row["GM"], row["WM"]], [i, i], color="gray", linewidth=0.8, zorder=1)
+        ax.plot(
+            [row["GM"], row["WM"]], [i, i],
+            color="gray", linewidth=0.8, zorder=1
+        )
 
-    sc_gm = ax.scatter(wide["GM"], y, color=GM_COLOR, zorder=2, label="GM", s=40)
-    sc_wm = ax.scatter(wide["WM"], y, color=WM_COLOR, zorder=2, label="WM", s=40)
-
+    ax.scatter(wide["GM"], y, color=GM_COLOR, s=40, zorder=2)
+    ax.scatter(wide["WM"], y, color=WM_COLOR, s=40, zorder=2)
     ax.set_yticks(y)
-    ax.set_yticklabels(wide["Subregion"], fontsize=FONT["ytick"])
-    ax.set_xlabel("LOA Width", fontsize=FONT["xlabel"])
-    ax.set_title(comp["label"], fontsize=FONT["title"], fontweight="bold")
-    ax.grid(axis="x", linestyle="--", alpha=0.4)
+    ax.set_yticklabels(
+        [value.replace("_", " ") for value in wide["Subregion"]],
+        fontsize=FONT["ytick"],
+    )
+    ax.set_ylim(-0.5, len(wide) - 0.5)
     ax.set_xlim(x_lim)
-    ax.tick_params(axis="x", labelsize=FONT["xtick"])
+    if comparison_title is None:
+        ax.set_xlabel("LOA Width", fontsize=FONT["xlabel"])
+    ax.grid(axis="x", linestyle="--", alpha=0.4)
+    ax.tick_params(axis="x", labelsize=FONT["xtick"], labelbottom=True)
 
-    ax.legend(
-        handles=legend_handles,
-        loc="lower right",
-        fontsize=FONT["legend"],
-        framealpha=0.7,
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("gray")
+        spine.set_linewidth(0.8)
+
+    if comparison_title:
+        ax.set_title(
+            comparison_title, fontsize=FONT["title"], fontweight="bold"
+        )
+    if show_legend:
+        ax.legend(
+            handles=legend_handles,
+            loc="lower right",
+            fontsize=FONT["legend"],
+            framealpha=0.7,
+        )
+
+for column, comp in enumerate(comparisons):
+    wide = make_wide(df, comp)
+    draw_panel(
+        axes[0, column],
+        wide,
+        panel_a_order,
+        comparison_title=comp["label"],
+        show_legend=False,
+    )
+    draw_panel(
+        axes[1, column],
+        wide,
+        panel_b_order,
     )
 
-plt.tight_layout()
-plt.savefig(OUTPUT_DIR / f"{DATA_TYPE}_loa_GM_vs_WM.png", dpi=150, bbox_inches="tight")
-plt.show()
-print(f"Saved: {OUTPUT_DIR / f'{DATA_TYPE}_loa_GM_vs_WM.png'}")
+# Add A and B labels to the left of the two panel rows.
+axes[0, 0].text(
+    -0.28, 1.02, "A", transform=axes[0, 0].transAxes,
+    fontsize=FONT["panel"], fontweight="bold", va="bottom"
+)
+axes[1, 0].text(
+    -0.28, 1.02, "B", transform=axes[1, 0].transAxes,
+    fontsize=FONT["panel"], fontweight="bold", va="bottom"
+)
+
+plt.tight_layout(rect=[0.03, 0.02, 1, 0.95])
+
+# Save only the complete two-panel composite figure.
+output_path = OUTPUT_DIR / f"{DATA_TYPE}_loa_GM_vs_WM_composite.png"
+fig.savefig(output_path, dpi=150, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved: {output_path}")
