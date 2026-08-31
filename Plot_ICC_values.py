@@ -32,7 +32,7 @@ from pathlib import Path
 # ── File paths and data settings ──────────────────────────────────────────────
 EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingICCWithAvg.xlsx"
 OUTPUT_DIR = Path("/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper figures")
-SHEET_NAME = "Volume"  # "Volume" or "MPF"
+SHEET_NAME = "MPF"  # "Volume" or "MPF"
 SIDE_VALUE = "Average"
 
 # ── Column names ──────────────────────────────────────────────────────────────
@@ -71,6 +71,7 @@ ICC_UPPER_COLS = [columns[2] for columns in COMPARISONS.values()]
 
 # ── Plotting options ──────────────────────────────────────────────────────────
 REFERENCE_LINE = 0.75
+REFERENCE_LINE_2 = 0.90
 GM_COLOR = "#4C72B0"
 WM_COLOR = "#E07B39"
 SUBCORTICAL_COLOR = "#1A1A1A"
@@ -213,6 +214,14 @@ def format_axis(ax, region_order, show_yticks):
         REFERENCE_LINE,
         color="gray",
         linestyle="--",
+        lw=1.2,
+        zorder=1,
+    )
+
+    ax.axvline(
+        REFERENCE_LINE_2,
+        color="gray",
+        linestyle=":",
         lw=1.2,
         zorder=1,
     )
@@ -509,11 +518,17 @@ ref_line = plt.Line2D(
     lw=1.2,
     label=f"ICC = {REFERENCE_LINE}",
 )
-
+ref_line2 = plt.Line2D(
+    [0], [0],
+    color="gray",
+    linestyle=":",
+    lw=1.2,
+    label=f"ICC = {REFERENCE_LINE_2:.2f}",
+)
 fig.legend(
-    handles=[gm_patch, wm_patch, sub_patch, ref_line],
+    handles=[gm_patch, wm_patch, sub_patch, ref_line, ref_line2],
     loc="upper center",
-    ncol=4,
+    ncol=5,
     fontsize=FONT["legend"],
     frameon=False,
     bbox_to_anchor=(0.5, 0.955),
