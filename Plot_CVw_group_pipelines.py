@@ -1,6 +1,25 @@
 """
 CVw Forest Plot — RMS repeatability across imaging workflows.
 
+Reads MPF or Volume repeatability data from Excel and creates a combined
+forest plot for Gray Matter, White Matter, and Subcortical regions. Gray
+Matter and White Matter are each divided into a compact cerebrum/lobe
+subpanel and a cortical-parcel subpanel. Each GM and WM plot is individually
+titled Gray Matter or White Matter and carries the measurement x-axis label.
+
+For both MPF and Volume, the single subcortical plot is centered vertically
+in the rightmost column. Its Subcortical title is positioned directly above
+panel C, and the workflow legend is centered at the top of the rightmost
+column.
+
+All y-tick labels use the same font size. Moderate inter-column spacing keeps
+long labels clear of neighboring plots without creating excessive blank
+space. The upper and lower cortical rows use enough vertical spacing to keep the
+upper x-axis labels clear of the lower plot titles. The
+two cortical plot rows are labeled A and B, and the subcortical panel is
+labeled C. Each panel letter is centered above its y-tick-label column. No
+y-axis title is displayed. The workflow legend and significance-symbol key
+are stacked at the top of the rightmost column.
 """
 
 from pathlib import Path
@@ -20,7 +39,7 @@ OUTPUT_DIR = Path(
     "final paper figures"
 )
 
-DATA_TYPE = "Volume"  # "MPF" or "Volume"
+DATA_TYPE = "MPF"  # "MPF" or "Volume"
 
 if DATA_TYPE.casefold() == "volume":
     DATA_TYPE = "Volume"
@@ -97,7 +116,6 @@ FONT = {
 COLUMN_SPACE = 0.62
 VERTICAL_PANEL_SPACE = 0.24
 FIGURE_WIDTH_PER_COLUMN = 9.0
-Y_LABEL_PAD_POINTS = 12
 PANEL_LETTER_Y_PAD = 0.006
 
 WORKFLOWS = {
@@ -225,12 +243,15 @@ cvw_point_cols = [cols[0] for cols in WORKFLOWS.values()]
 
 # Labels accepted in the compact upper GM/WM panel. Matching ignores spaces,
 # underscores, hyphens, capitalization, and an optional terminal "lobe".
+# Matplotlib places index 0 at the bottom. These ranks therefore produce
+# the visible top-to-bottom order Cerebrum, Frontal, Parietal, Occipital,
+# Temporal.
 SUMMARY_REGION_KEYS = {
-    "cerebrum": 0,
-    "frontal": 1,
+    "temporal": 0,
+    "occipital": 1,
     "parietal": 2,
-    "occipital": 3,
-    "temporal": 4,
+    "frontal": 3,
+    "cerebrum": 4,
 }
 
 
@@ -254,7 +275,7 @@ def split_summary_and_parcels(tissue_df):
 
 
 def compute_region_order(tissue_df):
-    """Return unique region labels in the requested plot order."""
+    """Return unique region labels in the requested plotting order."""
     if tissue_df.empty:
         return []
 
@@ -277,7 +298,7 @@ def compute_region_order(tissue_df):
 
 
 def compute_summary_order(tissue_df):
-    """Order cerebrum first, followed by frontal through temporal lobes."""
+    """Order the visible rows top-to-bottom: cerebrum through temporal lobe."""
     labels = tissue_df[COL["subregion"]].drop_duplicates().tolist()
     return sorted(
         labels,
@@ -364,8 +385,12 @@ def draw_grouped_panel(
     lowercase_labels=False,
     ytick_fontsize=None,
 ):
-    """Draw all workflows and significance symbols for one tissue panel."""
+    """Draw all workflows and significance symbols for one tissue subpanel."""
     n_regions = len(region_order)
+    if n_regions == 0:
+        ax.set_axis_off()
+        return
+
     y_pos = {region: i for i, region in enumerate(region_order)}
 
     for wf_name, (cvw_col, lo_col, hi_col) in WORKFLOWS.items():
@@ -436,19 +461,17 @@ def draw_grouped_panel(
         if lowercase_labels
         else region_order
     )
+    label_size = FONT["ytick"] if ytick_fontsize is None else ytick_fontsize
     ax.set_yticks(range(n_regions))
     ax.set_yticklabels(display_labels)
-    ax.tick_params(
-        axis="y",
-        labelsize=ytick_fontsize or FONT["ytick"],
-        pad=4,
-    )
+    ax.tick_params(axis="y", labelsize=label_size, pad=4)
     ax.set_ylim(-0.5, n_regions - 0.5)
 
     ax.set_xlim(X_LIM)
     ax.tick_params(axis="x", labelsize=FONT["xtick"])
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.set_ylabel("")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -470,20 +493,6 @@ def method_legend_handles():
     ]
 
 
-def tick_label_left_x(fig, ax):
-    """Return the left edge of the visible y-tick labels in figure units."""
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    boxes = [
-        label.get_window_extent(renderer=renderer)
-        for label in ax.get_yticklabels()
-        if label.get_visible() and label.get_text()
-    ]
-    if not boxes:
-        return ax.get_position().x0
-    return min(fig.transFigure.inverted().transform(box.get_points())[0, 0] for box in boxes)
-
-
 def get_tick_label_column_center_x(fig, ax):
     """Return the horizontal center of an axis's y-tick-label column."""
     fig.canvas.draw()
@@ -496,46 +505,17 @@ def get_tick_label_column_center_x(fig, ax):
     if not boxes:
         return ax.get_position().x0
 
-    left = min(
-        fig.transFigure.inverted().transform(box.get_points())[0, 0]
-        for box in boxes
-    )
-    right = max(
-        fig.transFigure.inverted().transform(box.get_points())[1, 0]
-        for box in boxes
-    )
-    return (left + right) / 2
+    left = min(box.x0 for box in boxes)
+    right = max(box.x1 for box in boxes)
+    center_display = (left + right) / 2
+    return fig.transFigure.inverted().transform((center_display, 0))[0]
 
 
-def add_aligned_row_ylabels(fig, upper_ax, lower_ax):
-    """Add two Region labels at exactly the same figure-level x coordinate."""
-    fig.canvas.draw()
-    fig_width_inches = fig.get_size_inches()[0]
-    pad_fraction = (Y_LABEL_PAD_POINTS / 72) / fig_width_inches
-    shared_x = min(
-        tick_label_left_x(fig, upper_ax),
-        tick_label_left_x(fig, lower_ax),
-    ) - pad_fraction
-
-    for ax in (upper_ax, lower_ax):
-        bbox = ax.get_position()
-        fig.text(
-            shared_x,
-            (bbox.y0 + bbox.y1) / 2,
-            "Region",
-            rotation=90,
-            va="center",
-            ha="right",
-            fontsize=FONT["ylabel"],
-        )
-    return shared_x
-
-
-def add_panel_letter(fig, ax, letter, x_coordinate):
-    """Place a panel letter above a y-label or y-tick-label column."""
+def add_panel_letter(fig, ax, letter, x_position):
+    """Place a panel letter above the corresponding y-tick-label column."""
     bbox = ax.get_position()
     fig.text(
-        x_coordinate,
+        x_position,
         bbox.y1 + PANEL_LETTER_Y_PAD,
         letter,
         fontsize=FONT["panel_letter"],
@@ -627,8 +607,7 @@ for col_idx, (tissue_df, summary_order, parcel_order, tissue_name) in enumerate(
         )
 
     if col_idx == 0:
-        # The shared Region labels and row letters are added at figure level
-        # after the layout is finalized.
+        # Row letters are added at figure level after layout is finalized.
         first_column_axes = (ax_summary, ax_parcels)
 
 # Center the single subcortical plot vertically in the rightmost column for
@@ -652,42 +631,63 @@ draw_grouped_panel(
     lowercase_labels=True,
     ytick_fontsize=FONT["ytick_long"],
 )
+ax_sub.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"], labelpad=3)
 ax_sub.set_title(
     "Subcortical",
     fontsize=FONT["title"],
     fontweight="bold",
-    pad=10,
+    pad=8,
 )
-ax_sub.set_xlabel(MEASURE_LABEL, fontsize=FONT["xlabel"])
 
-# Finalize the axes positions before placing figure-level labels and measuring
-# tick-label extents.
+# The extra top margin holds the workflow legend and significance key in the
+# rightmost column. No separate figure-level significance note is needed.
 fig.subplots_adjust(top=0.90, bottom=0.08)
 
 if first_column_axes is not None:
-    region_label_x = add_aligned_row_ylabels(fig, *first_column_axes)
-    add_panel_letter(fig, first_column_axes[0], "A", region_label_x)
-    add_panel_letter(fig, first_column_axes[1], "B", region_label_x)
+    # With y-axis titles removed, center A and B above their y-tick-label
+    # columns, matching the placement used for C.
+    add_panel_letter(
+        fig,
+        first_column_axes[0],
+        "A",
+        get_tick_label_column_center_x(fig, first_column_axes[0]),
+    )
+    add_panel_letter(
+        fig,
+        first_column_axes[1],
+        "B",
+        get_tick_label_column_center_x(fig, first_column_axes[1]),
+    )
 
-# Center C above the subcortical tick-label column rather than placing it
-# immediately to the left of the plotting axis.
 subcortical_tick_column_x = get_tick_label_column_center_x(fig, ax_sub)
 add_panel_letter(fig, ax_sub, "C", subcortical_tick_column_x)
 
-# Center the workflow legend at the top of the rightmost column. Because
-# panel C is vertically centered, the legend occupies the open space above it.
+# Center the workflow legend and symbol key at the top of the rightmost column.
 right_column_bbox = outer_grid[0, -1].get_position(fig)
+right_column_center_x = (right_column_bbox.x0 + right_column_bbox.x1) / 2
+
 fig.legend(
     handles=method_legend_handles(),
     loc="upper center",
-    bbox_to_anchor=(
-        (right_column_bbox.x0 + right_column_bbox.x1) / 2,
-        right_column_bbox.y1,
-    ),
+    bbox_to_anchor=(right_column_center_x, right_column_bbox.y1),
     bbox_transform=fig.transFigure,
     ncol=len(WORKFLOWS),
     fontsize=FONT["legend"],
     frameon=False,
+)
+
+fig.text(
+    right_column_center_x,
+    right_column_bbox.y1 - 0.045,
+    (
+        f"*  MPF vs MPFreg, adj.p < {ALPHA_THRESHOLD}\n"
+        f"†  MPF vs MPRAGE, adj.p < {ALPHA_THRESHOLD}\n"
+        f"‡  MPFreg vs MPRAGE, adj.p < {ALPHA_THRESHOLD}"
+    ),
+    fontsize=FONT["legend"] - 3,
+    ha="center",
+    va="top",
+    linespacing=1.25,
 )
 
 fig.suptitle(
@@ -695,18 +695,6 @@ fig.suptitle(
     fontsize=FONT["title"] + 2,
     fontweight="bold",
     y=0.995,
-)
-
-fig.text(
-    0.01,
-    0.015,
-    (
-        f"*  MPF vs MPFreg, adj.p < {ALPHA_THRESHOLD}     "
-        f"†  MPF vs MPRAGE, adj.p < {ALPHA_THRESHOLD}     "
-        f"‡  MPFreg vs MPRAGE, adj.p < {ALPHA_THRESHOLD}"
-    ),
-    fontsize=FONT["legend"] - 1,
-    va="bottom",
 )
 
 combined_out = OUTPUT_DIR / f"{FILE_LABEL}_forest_combined_grouped_{SHEET_NAME}.png"
@@ -717,11 +705,12 @@ print(f"Saved: {combined_out}")
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Summary statistics
 # ─────────────────────────────────────────────────────────────────────────────
-def compute_cvw_stats(df_in, region_label, cvw_col):
-    """Calculate descriptive statistics for one workflow and tissue group."""
+def compute_cvw_stats(df_in, tissue_name, region_group, cvw_col):
+    """Calculate descriptive statistics for one workflow and region group."""
     vals = df_in[cvw_col].dropna()
     return {
-        "Region": region_label,
+        "Tissue": tissue_name,
+        "Region group": region_group,
         "N": len(vals),
         "Mean": round(vals.mean(), 4) if not vals.empty else np.nan,
         "SD": round(vals.std(), 4) if not vals.empty else np.nan,
@@ -730,31 +719,63 @@ def compute_cvw_stats(df_in, region_label, cvw_col):
     }
 
 
-summary_rows = []
-summary_groups = [
-    ("GM", gm_data),
-    ("Subcortical", sub_data),
+def build_summary_table(groups):
+    """Return workflow-level summary statistics for the requested groups."""
+    rows = []
+    for wf_name, (cvw_col, _, _) in WORKFLOWS.items():
+        for tissue_name, region_group, tissue_df in groups:
+            row = compute_cvw_stats(
+                tissue_df,
+                tissue_name,
+                region_group,
+                cvw_col,
+            )
+            row["Workflow"] = wf_name
+            rows.append(row)
+
+    return pd.DataFrame(rows)[
+        ["Workflow", "Tissue", "Region group", "N", "Mean", "SD", "Min", "Max"]
+    ]
+
+
+# Keep cerebrum/lobe statistics separate from parcel/subcortical statistics.
+cerebrum_lobe_groups = [
+    ("GM", "Cerebrum and lobes", gm_summary_data),
 ]
+parcel_subcortical_groups = [
+    ("GM", "Cortical parcels", gm_parcel_data),
+    ("Subcortical", "Subcortical regions", sub_data),
+]
+
 if INCLUDE_WM_PANEL:
-    summary_groups.insert(1, ("WM", wm_data))
+    cerebrum_lobe_groups.append(
+        ("WM", "Cerebrum and lobes", wm_summary_data)
+    )
+    parcel_subcortical_groups.insert(
+        1,
+        ("WM", "Cortical parcels", wm_parcel_data),
+    )
 
-for wf_name, (cvw_col, _, _) in WORKFLOWS.items():
-    for tissue_name, tissue_df in summary_groups:
-        row = compute_cvw_stats(
-            tissue_df,
-            f"{wf_name} — {tissue_name}",
-            cvw_col,
-        )
-        row["Workflow"] = wf_name
-        summary_rows.append(row)
+cerebrum_lobe_summary = build_summary_table(cerebrum_lobe_groups)
+parcel_subcortical_summary = build_summary_table(parcel_subcortical_groups)
 
-summary_df = pd.DataFrame(summary_rows)[
-    ["Workflow", "Region", "N", "Mean", "SD", "Min", "Max"]
-]
+print("\n── CVw Summary Statistics: Cerebrum and Lobe Regions ──")
+print(cerebrum_lobe_summary.to_string(index=False))
 
-print("\n── CVw Summary Statistics ──")
-print(summary_df.to_string(index=False))
+print("\n── CVw Summary Statistics: Cortical Parcels and Subcortical Regions ──")
+print(parcel_subcortical_summary.to_string(index=False))
 
-stats_out = OUTPUT_DIR / f"{FILE_LABEL}_summary_stats_{SHEET_NAME}.csv"
-summary_df.to_csv(stats_out, index=False)
-print(f"\nSaved: {stats_out}")
+cerebrum_lobe_stats_out = (
+    OUTPUT_DIR
+    / f"{FILE_LABEL}_summary_stats_cerebrum_lobes_{SHEET_NAME}.csv"
+)
+parcel_subcortical_stats_out = (
+    OUTPUT_DIR
+    / f"{FILE_LABEL}_summary_stats_parcels_subcortical_{SHEET_NAME}.csv"
+)
+
+cerebrum_lobe_summary.to_csv(cerebrum_lobe_stats_out, index=False)
+parcel_subcortical_summary.to_csv(parcel_subcortical_stats_out, index=False)
+
+print(f"\nSaved: {cerebrum_lobe_stats_out}")
+print(f"Saved: {parcel_subcortical_stats_out}")
