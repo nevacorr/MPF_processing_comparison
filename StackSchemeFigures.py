@@ -171,7 +171,7 @@ for label in "ABC":
         width=box_width,
     )
 
-    label_x = left + box_width + label_padding
+    label_x = left + box_width + label_padding + 10
     label_y = top + box_width + label_padding
     text_box = draw.textbbox((label_x, label_y), label, font=font)
     background_box = (
@@ -183,8 +183,8 @@ for label in "ABC":
     draw.rectangle(background_box, fill="white")
     draw.text((label_x, label_y), label, fill="black", font=font)
 
-output_path = os.path.join(image_path, "combined.png")
-# final.save(output_path)
+output_path = os.path.join(image_path, "WorkflowSchemeFigure.png")
+final.save(output_path)
 final.show()
 
 # print(f"Cropped {side_crop_pixels} pixels from each side of image 1.")
