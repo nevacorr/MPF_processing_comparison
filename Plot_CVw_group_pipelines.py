@@ -32,14 +32,14 @@ import pandas as pd
 # ── File path ─────────────────────────────────────────────────────────────────
 EXCEL_PATH = Path(
     "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/"
-    "final paper data/TablesForPlottingBiasWithAvg.xlsx"
+    "final paper data/TablesForPlottingBiasWithAvg-v2.xlsx"
 )
 OUTPUT_DIR = Path(
     "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/"
     "final paper figures"
 )
 
-DATA_TYPE = "MPF"  # "MPF" or "Volume"
+DATA_TYPE = "Volume"  # "MPF" or "Volume"
 
 if DATA_TYPE.casefold() == "volume":
     DATA_TYPE = "Volume"
@@ -371,9 +371,9 @@ if data_range == 0:
     data_range = max(abs(global_min), 1.0)
 
 padding = data_range * 0.05
-SYMBOL_COL_FRAC = 0.90
+# SYMBOL_COL_FRAC = 0.90
 X_LIM = (global_min - padding, global_max + data_range * 0.20)
-SYMBOL_COL_X = global_min + (X_LIM[1] - global_min) * SYMBOL_COL_FRAC
+# SYMBOL_COL_X = global_min + (X_LIM[1] - global_min) * SYMBOL_COL_FRAC
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. Core panel-drawing function
@@ -437,24 +437,24 @@ def draw_grouped_panel(
         if region not in y_pos:
             continue
 
-        symbols = []
-        for _, _, pval_key, symbol in PAIR_DEFS:
-            pval = row[COL[pval_key]]
-            if pd.notna(pval) and pval < ALPHA_THRESHOLD:
-                symbols.append(symbol)
-
-        if symbols:
-            ax.text(
-                SYMBOL_COL_X,
-                y_pos[region],
-                " ".join(symbols),
-                fontsize=FONT["ytick"] - 4,
-                color="black",
-                va="center",
-                ha="center",
-                fontweight="bold",
-                zorder=5,
-            )
+        # symbols = []
+        # for _, _, pval_key, symbol in PAIR_DEFS:
+        #     pval = row[COL[pval_key]]
+        #     if pd.notna(pval) and pval < ALPHA_THRESHOLD:
+        #         symbols.append(symbol)
+        #
+        # if symbols:
+        #     ax.text(
+        #         SYMBOL_COL_X,
+        #         y_pos[region],
+        #         " ".join(symbols),
+        #         fontsize=FONT["ytick"] - 4,
+        #         color="black",
+        #         va="center",
+        #         ha="center",
+        #         fontweight="bold",
+        #         zorder=5,
+        #     )
 
     display_labels = (
         [str(region).lower() for region in region_order]
@@ -676,19 +676,19 @@ fig.legend(
     frameon=False,
 )
 
-fig.text(
-    right_column_center_x,
-    right_column_bbox.y1 - 0.045,
-    (
-        f"*  MPF vs MPFreg, adj.p < {ALPHA_THRESHOLD}\n"
-        f"†  MPF vs MPRAGE, adj.p < {ALPHA_THRESHOLD}\n"
-        f"‡  MPFreg vs MPRAGE, adj.p < {ALPHA_THRESHOLD}"
-    ),
-    fontsize=FONT["legend"] - 3,
-    ha="center",
-    va="top",
-    linespacing=1.25,
-)
+# fig.text(
+#     right_column_center_x,
+#     right_column_bbox.y1 - 0.045,
+#     (
+#         f"*  MPF vs MPFreg, adj.p < {ALPHA_THRESHOLD}\n"
+#         f"†  MPF vs MPRAGE, adj.p < {ALPHA_THRESHOLD}\n"
+#         f"‡  MPFreg vs MPRAGE, adj.p < {ALPHA_THRESHOLD}"
+#     ),
+#     fontsize=FONT["legend"] - 3,
+#     ha="center",
+#     va="top",
+#     linespacing=1.25,
+# )
 
 fig.suptitle(
     f"{DATA_TYPE} CVw by Workflow ({SHEET_NAME})",
