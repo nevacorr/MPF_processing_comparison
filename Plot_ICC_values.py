@@ -30,7 +30,7 @@ import matplotlib.patches as mpatches
 from pathlib import Path
 
 # ── File paths and data settings ──────────────────────────────────────────────
-EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingICCWithAvg.xlsx"
+EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingICCWithAvg-v2.xlsx"
 OUTPUT_DIR = Path("/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper figures")
 SHEET_NAME = "MPF"  # "Volume" or "MPF"
 SIDE_VALUE = "Average"
