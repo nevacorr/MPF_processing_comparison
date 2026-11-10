@@ -6,10 +6,10 @@ from pathlib import Path
 
 # ── File path ─────────────────────────────────────────────────────────────────
 
-EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingBiasWithAvg.xlsx"
+EXCEL_PATH = "/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper data/TablesForPlottingBiasWithAvg-v2.xlsx"
 OUTPUT_DIR = Path("/Users/nevao/Documents/MPF_Project/results for reproducibiity paper/final paper figures")
 
-DATA_TYPE    = "Volume"                    # "MPF" or "Volume"
+DATA_TYPE    = "MPF"                    # "MPF" or "Volume"
 MEASURE_TYPE = "relative"               # "absolute" or "relative" — ignored if DATA_TYPE = "Volume"
 
 if DATA_TYPE == "Volume":
